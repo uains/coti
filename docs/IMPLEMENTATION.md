@@ -1196,3 +1196,54 @@ docs/
 
 **建议的下一步：**
 将现有代码与本实施计划逐项核对，更新已完成状态，确定当前准确的实施位置，然后从下一个未验收的小步骤继续。
+
+------------------------------------------------------------------------
+
+## 12. 实施进度
+
+> 本节记录真实实现状态，与设计基线分开维护。`DESIGN.md` 的定义不因本节勾选而改变；代码已写出不等于已经通过阶段验收。
+
+### 阶段 0：工程基础设施（已完成，等待确认）
+
+**完成日期：** 2026-11-23
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 0.1 创建 Cargo Workspace | 完成 | virtual workspace、`md-app` 应用入口、`docs/CHANGELOG.md` |
+| 0.2 创建七个 Crate | 完成 | `md-core`～`md-render` 六个新 crate + `md-app`；单向依赖边 |
+| 0.3 定义公共基础类型规范 | 完成 | `docs/TYPE_OWNERSHIP.md`、ADR-0002 |
+| 0.4 配置统一错误处理 | 完成 | 各库 `thiserror` 错误、`md-app` 的 `anyhow` 边界、`docs/ERROR_HANDLING.md` |
+| 0.5 配置日志与 tracing | 完成 | `md-app::logging`、`RUST_LOG` 支持、`docs/OBSERVABILITY.md` |
+| 0.6 配置单元、集成测试 | 完成 | 20 个测试、`app_smoke` 集成测试、`docs/TESTING.md` |
+| 0.7 配置 CI、fmt、clippy | 完成 | Workspace lints、`rust-toolchain.toml`、三平台 CI、分层检查脚本、`docs/DEVELOPMENT.md` |
+
+#### 当前接口与结构
+
+- Workspace 成员：`crates/*`，七个 crate；`md-app` 同时产出 lib 与 `coti` bin。
+- 依赖方向：`md-core → md-document → {md-markdown, md-editor, md-layout} → md-render → md-app`。
+- 公共错误：`TextError`、`DocumentError`、`PositionError`、`MarkdownError`、`EditorError`、`LayoutError`、`RenderError`；应用边界为 `anyhow::Result`。
+- 日志：`md_app::logging::init()`，默认 `info`，从 `RUST_LOG` 读取过滤级别。
+- GPUI：阶段 0～7 不进入 active dependency graph；revision 固定在 ADR-0001。
+
+#### 验证结果
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`：通过。
+- `cargo test --workspace`：20 个测试通过。
+- `cargo run -p md-app`：输出启动信息，退出码 0。
+- `./scripts/check-layering.ps1`：`layering: OK (no GPUI below md-render)`。
+- CI workflow 已写入 `.github/workflows/ci.yml`，尚未在 GitHub 远端实际执行；本地等价检查已通过。
+
+#### 已知问题与偏差
+
+- GPUI 延后到阶段 8；`Cargo.lock` 当前不含 GPUI。阶段 8 必须重新锁定并验证三平台构建（ADR-0001）。
+- `IMPLEMENTATION.md` 1.1 与 `DESIGN.md` 2.2 对 `DocPos` 归属冲突，按 `md-document` 处理（ADR-0002）；阶段 1 不实现 `DocPos`。
+- 空模块阶段使用 `use <crate> as _;` 维持依赖边；模块实现后应删除这些临时标记。
+- 属性测试与基准测试尚未接入；计划在阶段 1 引入 `proptest`，阶段 7/11 引入基准。
+- 日志时间戳目前为 UTC；本地时区显示留待发布阶段处理。
+
+#### 下一步
+
+- 阶段 1：`md-core` 文本基础设施。建议从 1.1 开始：`TextOffset`、`TextRange`，按 ADR-0002 不包含 `DocPos`；完成后再进入 `TextBuf` 与 UTF-8/grapheme 工具。
+
+---
