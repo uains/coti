@@ -67,3 +67,32 @@
 ### 下一步
 
 - 0.3 定义公共基础类型规范，明确每个类型的归属 crate，避免后续重复定义。
+
+## 2026-11-23 · 步骤 0.3：定义公共基础类型规范
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `docs/TYPE_OWNERSHIP.md`，给出七个 crate 的公共类型唯一归属清单、归属原则和禁止事项。
+- 新增 ADR-0002：`DocPos`、`Affinity`、`Position`、`BlockGapPosition` 归 `md-document`，不下沉到 `md-core`。
+- 明确阶段 1 不实现 `DocPos`；阶段 2～3 再在 `md-document` 中实现。
+
+### 冲突处理
+
+- `IMPLEMENTATION.md` 步骤 1.1 把 `DocPos` 列在 `md-core`，与 `DESIGN.md` §2.2 的 crate 职责冲突。
+- 按“设计文档为基线”的原则采用 `md-document` 归属，理由和影响记录在 ADR-0002；阶段 1 验收范围据此调整。
+
+### 验证
+
+- 逐项核对 `DESIGN.md` §2.2、§3、§4 与 `IMPLEMENTATION.md` 阶段 1～3 的类型归属。
+- `cargo build --workspace`：成功，无代码变更引入的编译问题。
+
+### 设计说明
+
+- 类型清单覆盖文本、几何、文档、Markdown、编辑、布局、渲染与应用八类公共类型；后续新增类型先登记再实现。
+- 本轮只建立规范，不提前实现阶段 1 的 `TextBuf` 或阶段 2 的文档模型。
+
+### 下一步
+
+- 0.4 配置统一错误处理：每个库 crate 使用 `thiserror` 定义可分类错误，`md-app` 使用 `anyhow` 聚合边界错误。
