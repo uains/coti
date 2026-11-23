@@ -1,0 +1,8 @@
+[package]
+name = "md-core"
+version.workspace = true
+edition.workspace = true
+description = "Coti core text and geometry primitives"
+publish = false
+
+[dependencies]

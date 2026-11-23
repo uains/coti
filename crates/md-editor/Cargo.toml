@@ -1,0 +1,10 @@
+[package]
+name = "md-editor"
+version.workspace = true
+edition.workspace = true
+description = "Coti headless editing kernel"
+publish = false
+
+[dependencies]
+md-core.workspace = true
+md-document.workspace = true

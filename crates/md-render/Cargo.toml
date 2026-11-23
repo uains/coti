@@ -1,0 +1,12 @@
+[package]
+name = "md-render"
+version.workspace = true
+edition.workspace = true
+description = "Coti GPUI rendering and input adaptation"
+publish = false
+
+[dependencies]
+md-core.workspace = true
+md-document.workspace = true
+md-editor.workspace = true
+md-layout.workspace = true

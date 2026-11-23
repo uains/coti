@@ -1,0 +1,9 @@
+[package]
+name = "md-document"
+version.workspace = true
+edition.workspace = true
+description = "Coti document model, coordinates, and selections"
+publish = false
+
+[dependencies]
+md-core.workspace = true

@@ -5,3 +5,56 @@ version = 4
 [[package]]
 name = "md-app"
 version = "0.1.0"
+dependencies = [
+ "md-core",
+ "md-document",
+ "md-editor",
+ "md-layout",
+ "md-markdown",
+ "md-render",
+]
+
+[[package]]
+name = "md-core"
+version = "0.1.0"
+
+[[package]]
+name = "md-document"
+version = "0.1.0"
+dependencies = [
+ "md-core",
+]
+
+[[package]]
+name = "md-editor"
+version = "0.1.0"
+dependencies = [
+ "md-core",
+ "md-document",
+]
+
+[[package]]
+name = "md-layout"
+version = "0.1.0"
+dependencies = [
+ "md-core",
+ "md-document",
+]
+
+[[package]]
+name = "md-markdown"
+version = "0.1.0"
+dependencies = [
+ "md-core",
+ "md-document",
+]
+
+[[package]]
+name = "md-render"
+version = "0.1.0"
+dependencies = [
+ "md-core",
+ "md-document",
+ "md-editor",
+ "md-layout",
+]

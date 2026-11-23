@@ -1,10 +1,18 @@
 [workspace]
 resolver = "3"
-members = ["crates/md-app"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+
+[workspace.dependencies]
+md-core = { path = "crates/md-core" }
+md-document = { path = "crates/md-document" }
+md-markdown = { path = "crates/md-markdown" }
+md-editor = { path = "crates/md-editor" }
+md-layout = { path = "crates/md-layout" }
+md-render = { path = "crates/md-render" }
 
 # GPUI is intentionally absent from the active dependency graph during phases 0-7.
 # When md-render/md-app adopt it, reuse the revision recorded by the original

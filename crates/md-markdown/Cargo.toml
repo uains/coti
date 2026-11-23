@@ -1,0 +1,10 @@
+[package]
+name = "md-markdown"
+version.workspace = true
+edition.workspace = true
+description = "Coti Markdown parsing and source-faithful serialization"
+publish = false
+
+[dependencies]
+md-core.workspace = true
+md-document.workspace = true

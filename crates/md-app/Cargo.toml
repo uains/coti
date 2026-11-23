@@ -2,7 +2,16 @@
 name = "md-app"
 version.workspace = true
 edition.workspace = true
-description = "Coti desktop application"
+description = "Coti desktop application assembly"
+publish = false
+
+[dependencies]
+md-core.workspace = true
+md-document.workspace = true
+md-markdown.workspace = true
+md-editor.workspace = true
+md-layout.workspace = true
+md-render.workspace = true
 
 [[bin]]
 name = "coti"
