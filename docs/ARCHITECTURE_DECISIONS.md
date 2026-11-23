@@ -98,3 +98,61 @@
 - 跨 crate API 会多一些 `.get()` / `.into()`；这是有意的显式边界。
 - 阶段 2/3 的 `DocPos` 仍使用独立 newtype，不与 `TextOffset` 混用。
 - 后续属性测试必须覆盖非法范围、非字符边界和 UTF-16 中间位置。
+
+## ADR-0004：Arena 暂存语义与 Document 验证门槛
+
+- **状态：** Accepted
+- **日期：** 2026-11-23
+- **影响范围：** `NodeArena`、`Document`、阶段 5 Transaction/History
+
+### 背景
+
+Undo 需要恢复被删除节点的原 `BlockId`；如果删除时立即递增 generation 并回收槽位，旧 ID 就会失效，inverse 操作无法恢复。另一方面，构建嵌套文档时必须能先创建空容器、再追加子块，因此结构原语不能每一步都要求整棵树合法。
+
+### 决策
+
+1. `NodeArena` 支持 live / staged / free 三态。
+2. `stage` 只把节点移出 live 视图，保留槽位与 generation；`restore` 用原 ID 恢复；只有 `release_staged` 才递增 generation 并回收。
+3. generation 达到 `u32::MAX` 后槽位不再回收，避免回绕后旧 ID 重新有效。
+4. `Document` 的结构原语（`insert_block`/`remove_block`/`move_block`）只检查局部前置条件，允许短暂的不完整状态；`Document::validate` 是发布 revision 前的统一门槛。
+5. 阶段 5 的 Transaction 必须在提交前执行 `validate`，失败回滚；History 负责 staged 节点的恢复或释放。
+
+### 理由
+
+- 将“结构构造”和“提交验收”分开，避免为了构造嵌套树而放宽最终不变量。
+- staged 节点保留原 ID，是 Undo 完整恢复文档与选区的前提。
+- 统一 `validate` 入口比在每个结构原语里重复部分整树检查更容易维护。
+
+### 后果
+
+- `Document::remove_block` 当前直接 `free`，是阶段 2 的简化路径；阶段 5 必须改用 staging 或 inverse snapshot。
+- 调用方在两次结构修改之间可能观察到暂时非法的文档；只有 `validate` 成功后才能对外发布。
+- 每个新结构原语仍需做局部前置检查，不能把明显错误延迟到最终校验。
+
+## ADR-0005：`BlockNode.source` 暂缓到阶段 4 前决定
+
+- **状态：** Accepted（待阶段 4 前复审）
+- **日期：** 2026-11-23
+- **影响范围：** `BlockNode`、`md-markdown`、SourceHint
+
+### 背景
+
+`DESIGN.md` 的 `BlockNode` 示例包含 `source: SourceHint`，但 `SourceHint` 在 crate 职责中属于 `md-markdown`，而 `md-document` 不能依赖 `md-markdown`。在未实现解析器前，直接选择拆分或下沉都可能造成错误抽象。
+
+### 决策
+
+- 阶段 2 的 `BlockNode` 只包含 `id`、`parent`、`kind`，不含 `source` 字段。
+- 阶段 4 实现 SourceHint/Serializer 前，必须重新评估并选择：
+  1. `md-document` 定义轻量 `SourceSpan`，`md-markdown` 用 `BlockId -> StyleHints` 侧表。
+  2. 将完整 SourceHint 移入 `md-document`（需接受 Markdown 风格提示进入文档模型）。
+  3. 其他能保持 crate 单向依赖的方案。
+
+### 理由
+
+- 当前阶段不需要 source 元数据，提前引入会限制后续解析器的设计。
+- 保持 `md-document` 不依赖 Markdown 语法，避免破坏 AC-09 的依赖边界。
+
+### 后果
+
+- 阶段 4 前必须补充 ADR 或修订本条，不能直接沿用 `BlockNode` 示例。
+- 节点拆分/合并/移动时 SourceHint 的继承规则尚未落地，属于阶段 4 的设计任务。

@@ -15,7 +15,7 @@ Coti 的名字来自拉丁语cotidianus（每日的）。它不追求“第二�
 
 ## 开发
 
-当前处于阶段 1（`md-core` 文本基础设施），已完成并等待阶段验收。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+当前处于阶段 2（`md-document` 文档模型），已完成并等待阶段验收。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ```powershell
 cargo run -p md-app

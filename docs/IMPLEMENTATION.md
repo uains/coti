@@ -1246,7 +1246,7 @@ docs/
 
 - 阶段 1：`md-core` 文本基础设施。建议从 1.1 开始：`TextOffset`、`TextRange`，按 ADR-0002 不包含 `DocPos`；完成后再进入 `TextBuf` 与 UTF-8/grapheme 工具。
 
-### 阶段 1：`md-core` 文本基础设施（已完成，等待确认）
+### 阶段 1：`md-core` 文本基础设施（已完成，已确认）
 
 **完成日期：** 2026-11-23
 
@@ -1291,5 +1291,49 @@ docs/
 #### 下一步
 
 - 阶段 2：`md-document`。建议按 2.1 NodeArena/Generation/FreeList、2.2 BlockKind、2.3 InlineContent/Run/Marks、2.4 Document/Validator 四批实施，最后做随机结构不变式测试。
+
+### 阶段 2：`md-document` 文档模型（已完成，等待确认）
+
+**完成日期：** 2026-11-23
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 2.1 NodeArena | 完成 | `BlockId`、`NodeSlot`、`NodeArena`、generation、FreeList、staging/restore/release |
+| 2.2 Block 模型 | 完成 | `BlockKind` 全部节点、`BlockNode`、`FenceStyle`、`Align`、父子约束 |
+| 2.3 Inline 模型 | 完成 | `InlineContent`、`Run`、`Marks`、`MarkFlags`、`LinkRef`、`AtomKind`、Normalizer 报告 |
+| 2.4 Document | 完成 | root、插入/删除/移动、快照、Validator、随机结构属性测试 |
+
+实际实施顺序为 **2.3 → 2.2 → 2.1 → 2.4**，因为 `BlockKind` 依赖 `InlineContent`；依赖关系和验收范围不变。
+
+#### 当前接口
+
+- `md_document::{BlockId, NodeArena, BlockKind, BlockNode, FenceStyle, Align}`。
+- `md_document::{InlineContent, Run, Marks, MarkFlags, LinkRef, ImageRef, AtomKind, InlineNormalizeChange}`。
+- `md_document::{Document, DocumentSnapshot, DocumentError, PositionError}`。
+- `Document` 提供根级/容器内插入、整树删除、保留 ID 的移动、快照恢复、整树验证。
+- `NodeArena` 提供 live/staged/free 三态与 generation 失效。
+- `BlockNode` 暂不含 `source`，见 ADR-0005。
+
+#### 验证结果
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：103 个测试通过。
+  - `md-document` 47 个单元测试 + 3 个属性测试。
+- 属性测试覆盖随机根级插入、随机根块删除、随机根块移动后的 `validate` 与 ID 保留。
+- `./scripts/check-layering.ps1`：通过；`md-document` 依赖树仍无 GPUI。
+
+#### 已知问题与偏差
+
+- `Document::remove_block` 目前直接 `free`，不是事务安全的 staging 路径；阶段 5 必须改用 staging 或 inverse snapshot（ADR-0004）。
+- `Document` 允许构造期间短暂不完整（例如空 Quote 后再追加子块）；`validate` 是提交前门槛，不是每个结构原语的即时保证。
+- `DocumentIndex` 尚未加入；阶段 3 再补充叶子顺序、长度前缀与位置映射。
+- `BlockNode.source` 暂缺；阶段 4 前必须按 ADR-0005 重新决策。
+- `BlockKind::validate` 拒绝空 Quote/List/ListItem/Table/TableRow；解析器需要在空容器场景补空 Paragraph。
+- `NodeArena::alloc` 在 `u32` 槽位空间耗尽时 panic；这是硬上限，不是用户输入错误。
+
+#### 下一步
+
+- 阶段 3：`DocumentIndex`、`DocPos`、`Position`、`Selection`。建议先实现 DocPos/Affinity/Block Separator 与前缀索引，再实现双向位置转换和 Selection，最后做随机位置属性测试。
 
 ---
