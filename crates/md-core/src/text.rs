@@ -129,6 +129,19 @@ impl TextRange {
     pub const fn contains(self, offset: TextOffset) -> bool {
         self.start.get() <= offset.get() && offset.get() < self.end.get()
     }
+
+    /// Splits the range at `at` when `at` lies within `[start, end]`.
+    ///
+    /// Returns `None` when `at` is outside the range. Splitting at an endpoint
+    /// produces one empty range and the original range.
+    #[must_use]
+    pub fn split_at(self, at: TextOffset) -> Option<(Self, Self)> {
+        if at < self.start || at > self.end {
+            return None;
+        }
+
+        Some((Self::new(self.start, at), Self::new(at, self.end)))
+    }
 }
 
 impl fmt::Display for TextRange {
@@ -300,6 +313,84 @@ impl TextBuf {
     pub fn slice(&self, range: TextRange) -> TextResult<&str> {
         self.validate_range(range)?;
         Ok(&self.text[range.start().get()..range.end().get()])
+    }
+
+    /// Returns an owned copy of the text covered by `range`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the range is reversed, out of bounds, or not on
+    /// UTF-8 character boundaries.
+    pub fn to_owned_range(&self, range: TextRange) -> TextResult<Self> {
+        Ok(Self::from(self.slice(range)?))
+    }
+
+    /// Inserts `text` at `offset`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a boundary error when `offset` is out of bounds or not a UTF-8
+    /// character boundary. The buffer is unchanged on error.
+    pub fn insert(&mut self, offset: TextOffset, text: &str) -> TextResult<()> {
+        self.validate_offset(offset)?;
+        self.text.insert_str(offset.get(), text);
+        Ok(())
+    }
+
+    /// Removes the text covered by `range`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a range error when `range` is reversed, out of bounds, or not on
+    /// UTF-8 character boundaries. The buffer is unchanged on error.
+    pub fn remove(&mut self, range: TextRange) -> TextResult<()> {
+        self.validate_range(range)?;
+        self.text
+            .replace_range(range.start().get()..range.end().get(), "");
+        Ok(())
+    }
+
+    /// Replaces the text covered by `range` with `text`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a range error when `range` is reversed, out of bounds, or not on
+    /// UTF-8 character boundaries. The buffer is unchanged on error.
+    pub fn replace(&mut self, range: TextRange, text: &str) -> TextResult<()> {
+        self.validate_range(range)?;
+        self.text
+            .replace_range(range.start().get()..range.end().get(), text);
+        Ok(())
+    }
+
+    /// Splits the buffer at `offset`, returning the tail and keeping the prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns a boundary error when `offset` is out of bounds or not a UTF-8
+    /// character boundary. The buffer is unchanged on error.
+    pub fn split_off(&mut self, offset: TextOffset) -> TextResult<Self> {
+        self.validate_offset(offset)?;
+        Ok(Self::from(self.text.split_off(offset.get())))
+    }
+
+    /// Appends `text` to the end of the buffer.
+    pub fn append(&mut self, text: &str) {
+        self.text.push_str(text);
+    }
+
+    /// Appends another buffer to the end of this buffer.
+    pub fn append_buf(&mut self, other: &Self) {
+        self.text.push_str(other.as_str());
+    }
+
+    /// Returns a new buffer containing `self` followed by `other`.
+    #[must_use]
+    pub fn concat(&self, other: &Self) -> Self {
+        let mut text = String::with_capacity(self.len_bytes() + other.len_bytes());
+        text.push_str(self.as_str());
+        text.push_str(other.as_str());
+        Self::from(text)
     }
 
     /// Returns the text length in UTF-16 code units.
@@ -606,5 +697,114 @@ mod tests {
             TextBuf::from_utf16(&[0x0041, 0xD800]),
             Err(TextError::InvalidUtf16 { index: 1 })
         ));
+    }
+
+    #[test]
+    fn insert_supports_ascii_cjk_and_emoji() {
+        let mut buffer = TextBuf::from("ac");
+        buffer.insert(offset(1), "b").unwrap();
+        assert_eq!(buffer.as_str(), "abc");
+
+        buffer.insert(offset(3), "你").unwrap();
+        assert_eq!(buffer.as_str(), "abc你");
+
+        buffer.insert(offset(0), "😀").unwrap();
+        assert_eq!(buffer.as_str(), "😀abc你");
+    }
+
+    #[test]
+    fn insert_rejects_invalid_offsets_without_mutation() {
+        let mut buffer = TextBuf::from("你");
+        let before = buffer.clone();
+
+        assert!(matches!(
+            buffer.insert(offset(1), "x"),
+            Err(TextError::NotCharBoundary { offset: 1 })
+        ));
+        assert_eq!(buffer, before);
+
+        assert!(matches!(
+            buffer.insert(offset(4), "x"),
+            Err(TextError::OutOfBounds { offset: 4, len: 3 })
+        ));
+        assert_eq!(buffer, before);
+    }
+
+    #[test]
+    fn remove_and_replace_validate_before_mutating() {
+        let mut buffer = TextBuf::from("a你b");
+        buffer.remove(range(0, 4)).unwrap();
+        assert_eq!(buffer.as_str(), "b");
+
+        buffer.replace(range(0, 1), "世界").unwrap();
+        assert_eq!(buffer.as_str(), "世界");
+
+        let before = buffer.clone();
+        assert!(matches!(
+            buffer.replace(range(0, 1), "x"),
+            Err(TextError::NotCharBoundary { offset: 1 })
+        ));
+        assert_eq!(buffer, before);
+        assert!(matches!(
+            buffer.remove(range(2, 1)),
+            Err(TextError::InvalidRange {
+                start: 2,
+                end: 1,
+                len: 6
+            })
+        ));
+        assert_eq!(buffer, before);
+    }
+
+    #[test]
+    fn split_and_append_roundtrip() {
+        let mut buffer = TextBuf::from("a你b");
+        let tail = buffer.split_off(offset(4)).unwrap();
+        assert_eq!(buffer.as_str(), "a你");
+        assert_eq!(tail.as_str(), "b");
+
+        buffer.append_buf(&tail);
+        assert_eq!(buffer.as_str(), "a你b");
+
+        let mut empty = TextBuf::from("abc");
+        let tail = empty.split_off(offset(0)).unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(tail.as_str(), "abc");
+        empty.append(tail.as_str());
+        assert_eq!(empty.as_str(), "abc");
+    }
+
+    #[test]
+    fn split_rejects_invalid_offset_without_mutation() {
+        let mut buffer = TextBuf::from("a你");
+        let before = buffer.clone();
+        assert!(matches!(
+            buffer.split_off(offset(2)),
+            Err(TextError::NotCharBoundary { offset: 2 })
+        ));
+        assert_eq!(buffer, before);
+    }
+
+    #[test]
+    fn concat_and_owned_range_preserve_content() {
+        let left = TextBuf::from("你好");
+        let right = TextBuf::from("world");
+        assert_eq!(left.concat(&right).as_str(), "你好world");
+        assert_eq!(left.to_owned_range(range(0, 3)).unwrap().as_str(), "你");
+    }
+
+    #[test]
+    fn text_range_split_at_splits_inside_and_at_endpoints() {
+        let range = TextRange::new(offset(2), offset(6));
+        let (left, right) = range.split_at(offset(4)).unwrap();
+        assert_eq!(left, TextRange::new(offset(2), offset(4)));
+        assert_eq!(right, TextRange::new(offset(4), offset(6)));
+
+        let (empty, whole) = range.split_at(offset(2)).unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(whole, range);
+
+        assert_eq!(range.split_at(offset(1)), None);
+        assert_eq!(range.split_at(offset(7)), None);
     }
 }

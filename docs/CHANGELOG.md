@@ -281,3 +281,31 @@
 ### 下一步
 
 - 1.7～1.8：文本插入、删除、替换，以及区间拆分与合并。
+
+## 2026-11-23 · 阶段 1 / 步骤 1.7～1.8：文本修改与区间拆分
+
+**状态：** 已完成。
+
+### 变更
+
+- `TextBuf` 新增 `to_owned_range`、`insert`、`remove`、`replace`、`split_off`、`append`、`append_buf`、`concat`。
+- `TextRange` 新增 `split_at`：在区间内或端点处拆成两个半开区间；超出范围返回 `None`。
+- 所有修改操作先完成范围/边界校验，再修改 `String`；失败时缓冲区保持不变。
+- 新增 9 个测试：ASCII/CJK/Emoji 插入、非法 offset 不修改、删除/替换原子性、拆分/合并往返、空前缀拆分、`concat`/`to_owned_range`、`TextRange::split_at`。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy -p md-core --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：43 个测试通过（`md-core` 26 个）。
+
+### 设计说明
+
+- `split_off` 保留 prefix、返回 tail，便于后续 Inline Run 拆分与序列化切片。
+- `replace` 允许替换为不同字节长度的文本，但范围两端仍必须是 UTF-8 字符边界。
+- `TextRange::split_at` 在 start/end 端点也返回结果，便于统一处理空 run；不做隐式裁剪。
+- 修改操作目前是 `String::replace_range`，复杂度 O(n)；正确性优先，后续用基准决定是否引入 rope。
+
+### 下一步
+
+- 1.9～1.10：几何类型 `Point`/`Size`/`Rect`/`EdgeInsets`，属性测试与边界测试。
