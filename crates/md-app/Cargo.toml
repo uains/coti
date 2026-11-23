@@ -1,0 +1,9 @@
+[package]
+name = "md-app"
+version.workspace = true
+edition.workspace = true
+description = "Coti desktop application"
+
+[[bin]]
+name = "coti"
+path = "src/main.rs"
