@@ -2,7 +2,7 @@
 
 use crate::{BlockId, BlockKind, BlockNode, DocumentError, DocumentResult};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct NodeSlot {
     generation: u32,
     node: Option<BlockNode>,
@@ -14,7 +14,7 @@ struct NodeSlot {
 /// Slots are never exposed directly. A node can be live, staged (detached but
 /// still recoverable), or free. Recycling a slot increments its generation so
 /// stale ids fail lookup.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NodeArena {
     slots: Vec<NodeSlot>,
     free_list: Vec<u32>,

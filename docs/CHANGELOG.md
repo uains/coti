@@ -482,3 +482,45 @@
 ### 下一步
 
 - 2.4：`Document` 根、受控结构修改、快照、Validator 与随机结构不变式测试。
+
+## 2026-11-23 · 阶段 2 / 步骤 2.4：Document、Validator 与快照
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `Document`：
+  - `new` 创建含一个空 Paragraph 的合法文档。
+  - `insert_block`、`append_block` 支持根级和容器内插入。
+  - `remove_block` 删除整棵子树；根为空时自动补空 Paragraph。
+  - `move_block` 保留原 `BlockId`，更新 parent，并拒绝环、非法子类型、越界和“搬空容器”。
+  - `snapshot` / `restore` 提供整树快照。
+  - `node`、`parent`、`children`、`kind`、`root_children`、`block_count`、`leaf_count`、`is_ancestor`。
+- 新增 `DocumentSnapshot`。
+- 新增 `Document::validate`：
+  - 调用 Arena 校验。
+  - 拒绝 staged 节点、空 root、孤儿节点、重复可达、循环、错误 parent。
+  - 校验 root/容器子节点类型。
+  - 校验 Heading、fence、空容器、Inline 内容。
+  - 校验 Table 每行列数与 `aligns` 一致。
+- 新增 13 个 `Document` 单元测试和 3 个 `proptest` 结构属性测试。
+- `md-document` 增加 `proptest` dev-dependency。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：103 个测试通过。
+  - `md-document` 47 个单元测试 + 3 个属性测试。
+- 属性测试覆盖随机插入根段落、随机删除根块、随机移动根块并保留 ID。
+
+### 设计说明
+
+- `Document` 的结构修改允许短暂的不完整容器（例如先插入空 Quote，再追加子块），`validate` 是提交前的统一门槛；这避免构造顺序导致无法构建嵌套树。
+- `remove_block` 目前直接释放节点，适合阶段 2 的结构测试；阶段 5 的 Transaction/History 将改用 Arena staging 或 inverse snapshot。
+- `Document` 暂不含 `DocumentIndex`；阶段 3 再加入叶子顺序、长度前缀和位置映射。
+- `BlockNode` 仍不含 `source` 字段；SourceHint 归属按已确认方案留到阶段 4 前决定。
+
+### 下一步
+
+- 阶段 2 汇总验收，更新 `IMPLEMENTATION.md`，等待确认后进入阶段 3（DocumentIndex、DocPos、Selection）。

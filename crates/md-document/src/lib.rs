@@ -6,12 +6,14 @@
 
 mod arena;
 mod block;
+mod document;
 mod error;
 mod id;
 mod inline;
 
 pub use arena::NodeArena;
 pub use block::{Align, BlockKind, BlockNode, FenceStyle};
+pub use document::{Document, DocumentSnapshot};
 pub use error::{DocumentError, DocumentResult, PositionError, PositionResult};
 pub use id::BlockId;
 pub use inline::{
