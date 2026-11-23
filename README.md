@@ -12,3 +12,13 @@
 结：按日/周自动聚合未完成项与关键词，帮你决定什么值得留下
 
 Coti 的名字来自拉丁语cotidianus（每日的）。它不追求“第二大脑”式的宏大叙事，而是做一个你每天愿意打开、打开就能写、写完不丢的轻量工具。
+
+## 开发
+
+当前处于阶段 0（工程基础设施），实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+```powershell
+cargo run -p md-app
+cargo test --workspace
+```
+

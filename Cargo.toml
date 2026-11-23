@@ -6,6 +6,17 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "warn"
+unimplemented = "warn"
+
 [workspace.dependencies]
 md-core = { path = "crates/md-core" }
 md-document = { path = "crates/md-document" }

@@ -11,3 +11,6 @@ md-document.workspace = true
 md-editor.workspace = true
 md-layout.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

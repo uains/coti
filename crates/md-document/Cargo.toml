@@ -8,3 +8,6 @@ publish = false
 [dependencies]
 md-core.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

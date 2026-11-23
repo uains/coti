@@ -19,3 +19,6 @@ tracing-subscriber.workspace = true
 [[bin]]
 name = "coti"
 path = "src/main.rs"
+
+[lints]
+workspace = true

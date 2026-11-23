@@ -185,3 +185,40 @@
 ### 下一步
 
 - 0.7 配置 fmt、clippy、CI、依赖分层检查与测试文档入口。
+
+## 2026-11-23 · 步骤 0.7：配置 fmt、clippy 与 CI
+
+**状态：** 已完成。
+
+### 变更
+
+- 根 Workspace 新增统一 lint 配置：
+  - Rust：`unsafe_code = "deny"`、`missing_docs = "warn"`、`unused_must_use = "deny"`。
+  - Clippy：`all = "warn"`，`dbg_macro = "deny"`，`todo` / `unimplemented` 警告。
+- 七个 crate 均启用 `[lints] workspace = true`。
+- 新增 `rust-toolchain.toml`（stable + rustfmt + clippy）与 `rustfmt.toml`（Edition 2024、100 列、LF）。
+- 新增 `.github/workflows/ci.yml`：Ubuntu / Windows / macOS 三平台执行 fmt、clippy（`-D warnings`）、test 和分层检查，并使用 `--locked` 防止锁文件漂移。
+- 新增 `scripts/check-layering.sh` 与 `scripts/check-layering.ps1`，检查 `md-core`～`md-layout` 的依赖树中不出现 GPUI。
+- 新增 `docs/DEVELOPMENT.md`，汇总环境、命令、边界、提交与文档索引。
+- `README.md` 增加开发入口和当前阶段说明。
+- 补上 `main.rs` 的 crate 文档，使 `missing_docs` 在二进制目标上通过。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：20 个测试通过。
+- `./scripts/check-layering.ps1`：通过，非 UI crate 依赖树无 GPUI。
+- `cargo clippy --locked` / `cargo test --locked`：锁文件无需更新。
+- CI workflow 尚未在 GitHub 远端实际运行；本地等价命令全部通过。
+
+### 设计说明
+
+- `missing_docs` 设为 warn 并由 CI 的 `-D warnings` 提升为错误，保证公共 API 从阶段 0 起就有文档。
+- `unsafe_code = "deny"` 只作用于本仓库代码，不影响依赖；如未来确需 unsafe，应单独评审并在最小模块内调整。
+- 分层检查只校验“非 UI crate 无 GPUI”这一硬约束；完整依赖方向仍由代码审查和 `cargo tree` 保证。
+- 未加入 `.gitattributes` 强制行尾，避免影响现有 Windows 工作区；CI 以提交内容为准。
+
+### 下一步
+
+- 阶段 0 汇总验收，更新 `IMPLEMENTATION.md`，等待确认后进入阶段 1。
