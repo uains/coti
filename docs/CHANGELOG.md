@@ -454,3 +454,31 @@
 
 - 2.3 第二批：Inline Normalizer 已完成基础合并；补充映射准备与更多边界测试。
 - 之后进入 2.4 `Document`。
+
+## 2026-11-23 · 阶段 2 / 步骤 2.3（第二批）：Normalizer 报告与 Atom 插入
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `InlineNormalizeChange`：记录 `removed_empty_runs`、`merged_text_runs`，为阶段 5 的 PositionMapping 提供变化摘要。
+- 新增 `InlineContent::normalize_with_report`；`normalize` 改为其布尔包装。
+- 新增 `InlineContent::insert_atom(index, kind, marks)`。
+- 新增 3 个测试：Atom 指定位置插入、Normalizer 合并报告、干净内容空报告。
+- `InlineNormalizeChange` 加入 `md-document` 公开导出。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy -p md-document --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：87 个测试通过（`md-document` 34 个）。
+
+### 设计说明
+
+- Normalizer 不直接吞掉变化：需要映射时调用 `normalize_with_report`，由上层转换为 PositionMapping。
+- `removed_empty_runs` 目前主要服务解析/逆操作等内部路径；公开插入 API 已拒绝空 Text Run。
+- Atom 插入复用 `insert_run`，因此统一维护 `len` 与索引边界。
+
+### 下一步
+
+- 2.4：`Document` 根、受控结构修改、快照、Validator 与随机结构不变式测试。

@@ -240,6 +240,23 @@ impl Run {
     }
 }
 
+/// A summary of changes made by [`InlineContent::normalize_with_report`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct InlineNormalizeChange {
+    /// Number of empty text runs removed.
+    pub removed_empty_runs: usize,
+    /// Number of adjacent text runs merged.
+    pub merged_text_runs: usize,
+}
+
+impl InlineNormalizeChange {
+    /// Returns `true` when normalization changed nothing.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.removed_empty_runs == 0 && self.merged_text_runs == 0
+    }
+}
+
 /// Flat inline content: an ordered sequence of text and atom runs.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct InlineContent {
@@ -364,6 +381,20 @@ impl InlineContent {
         self.len += 1;
     }
 
+    /// Inserts an atom at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invariant error when `index` is out of bounds.
+    pub fn insert_atom(
+        &mut self,
+        index: usize,
+        kind: AtomKind,
+        marks: Marks,
+    ) -> DocumentResult<()> {
+        self.insert_run(index, Run::atom(kind, marks))
+    }
+
     /// Splits a text run at a local byte offset.
     ///
     /// Returns `true` when a split occurred and `false` at the run endpoints.
@@ -401,12 +432,17 @@ impl InlineContent {
     ///
     /// Returns `true` when the content changed.
     pub fn normalize(&mut self) -> bool {
-        let mut changed = false;
+        !self.normalize_with_report().is_empty()
+    }
+
+    /// Normalizes and reports what changed for later position mapping.
+    pub fn normalize_with_report(&mut self) -> InlineNormalizeChange {
+        let mut change = InlineNormalizeChange::default();
         let mut normalized = Vec::with_capacity(self.runs.len());
 
         for run in self.runs.drain(..) {
             if run.is_empty() {
-                changed = true;
+                change.removed_empty_runs += 1;
                 continue;
             }
 
@@ -420,7 +456,7 @@ impl InlineContent {
             {
                 previous.append(text.as_str());
                 merged = true;
-                changed = true;
+                change.merged_text_runs += 1;
             }
 
             if !merged {
@@ -429,9 +465,8 @@ impl InlineContent {
         }
 
         self.runs = normalized;
-        let previous_len = self.len;
         self.recompute_len();
-        changed || previous_len != self.len
+        change
     }
 
     /// Validates length, empty runs, and adjacent-run normalization.
@@ -484,7 +519,9 @@ impl InlineContent {
 
 #[cfg(test)]
 mod tests {
-    use super::{AtomKind, ImageRef, InlineContent, LinkRef, MarkFlags, Marks, Run};
+    use super::{
+        AtomKind, ImageRef, InlineContent, InlineNormalizeChange, LinkRef, MarkFlags, Marks, Run,
+    };
     use crate::DocumentError;
     use md_core::TextOffset;
 
@@ -630,5 +667,45 @@ mod tests {
         let atom = AtomKind::Image(image);
         let run = Run::atom(atom, Marks::plain());
         assert!(matches!(run.atom_kind(), Some(AtomKind::Image(_))));
+    }
+
+    #[test]
+    fn insert_atom_at_index_updates_length() {
+        let mut content = InlineContent::from_text("ab");
+        content
+            .insert_atom(0, AtomKind::HardBreak, Marks::plain())
+            .unwrap();
+        assert_eq!(content.len(), 3);
+        assert_eq!(content.runs().len(), 2);
+        assert!(matches!(
+            content.runs()[0].atom_kind(),
+            Some(AtomKind::HardBreak)
+        ));
+        assert!(
+            content
+                .insert_atom(9, AtomKind::SoftBreak, Marks::plain())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn normalize_report_counts_merges() {
+        let mut content = InlineContent::new();
+        content.push_run(Run::text("a", Marks::plain())).unwrap();
+        content.push_run(Run::text("b", Marks::plain())).unwrap();
+
+        let report = content.normalize_with_report();
+        assert_eq!(report.merged_text_runs, 1);
+        assert_eq!(report.removed_empty_runs, 0);
+        assert!(!report.is_empty());
+        assert!(!content.normalize());
+    }
+
+    #[test]
+    fn normalize_report_is_empty_when_clean() {
+        let mut content = InlineContent::from_text("a");
+        let report = content.normalize_with_report();
+        assert_eq!(report, InlineNormalizeChange::default());
+        assert!(report.is_empty());
     }
 }
