@@ -67,3 +67,34 @@
 ### 迁移
 
 无数据迁移。当前尚无实现代码。
+
+## ADR-0003：`TextOffset` / `TextRange` 使用 newtype
+
+- **状态：** Accepted
+- **日期：** 2026-11-23
+- **影响范围：** `md-core`，以及后续所有文本/文档 API
+
+### 背景
+
+文本偏移、长度、计数和 `DocPos` 都是 `usize`。如果全部使用裸 `usize`，很容易把字节偏移、字符数、UTF-16 码元数或块索引混用，而且编译器无法发现。
+
+### 决策
+
+1. `TextOffset` 使用 `#[repr(transparent)]` 的 `usize` newtype。
+2. `TextRange` 保存 `TextOffset` 的 start/end，使用半开区间 `[start, end)`。
+3. 提供 `From<usize>` / `From<TextOffset> for usize` 以及 `std::ops::Range<usize>` 转换，边界代码可以低摩擦接入。
+4. `TextRange` 允许暂时构造为 reversed；所有切片/修改操作必须先经过 `TextBuf::validate_range`。
+5. `TextBuf` 内部持有 `String`，只暴露 `&str`；禁止暴露 `&mut String`。
+6. 用户级移动仍按 grapheme cluster 计算，不能对 `TextOffset` 直接 `+1/-1` 代替字符移动。
+
+### 理由
+
+- 类型系统可以阻止“把长度当偏移”“把 UTF-16 码元数当 UTF-8 字节数”这类错误。
+- `#[repr(transparent)]` 不增加运行时开销，转换成本为零。
+- 允许 reversed 的 `TextRange` 使构造不 panic；错误在操作边界以 `TextError::InvalidRange` 返回，符合库错误规范。
+
+### 后果
+
+- 跨 crate API 会多一些 `.get()` / `.into()`；这是有意的显式边界。
+- 阶段 2/3 的 `DocPos` 仍使用独立 newtype，不与 `TextOffset` 混用。
+- 后续属性测试必须覆盖非法范围、非字符边界和 UTF-16 中间位置。

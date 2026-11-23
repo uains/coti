@@ -222,3 +222,33 @@
 ### 下一步
 
 - 阶段 0 汇总验收，更新 `IMPLEMENTATION.md`，等待确认后进入阶段 1。
+
+## 2026-11-23 · 阶段 1 / 步骤 1.1～1.3：文本基础类型与 UTF-8 边界
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `md-core::TextOffset`：`#[repr(transparent)]` 的字节偏移 newtype，提供 `ZERO`、`new`、`get`、`checked_add`、`checked_sub`。
+- 新增 `md-core::TextRange`：半开区间 `[start, end)`，提供 `new`、`empty`、`start`、`end`、`len`、`is_empty`、`is_valid`、`contains`，以及与 `Range<usize>` 的双向转换。
+- 新增 `md-core::TextBuf`：内部持有 `String`，提供 `new`、`as_str`、`into_string`、`len_bytes`、`is_empty`、`is_char_boundary`、`validate_offset`、`validate_range`、`slice`。
+- `TextBuf` 不暴露 `&mut String`；所有切片都经过 UTF-8 边界校验。
+- 新增 ADR-0003，记录 newtype 选择、半开区间和“允许构造 reversed range、操作时返回错误”的约定。
+- 新增 7 个 `md-core` 单元测试：空缓冲、ASCII、CJK、Emoji、reversed range、越界、range 长度语义。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy -p md-core --all-targets -- -D warnings`：通过。
+- `cargo test -p md-core`：10 个测试通过（含原有错误测试）。
+- `cargo test --workspace`：27 个测试通过。
+
+### 设计说明
+
+- `TextOffset`/`TextRange` 不承担 `DocPos` 语义；`DocPos` 仍按 ADR-0002 留在 `md-document`。
+- 允许构造 reversed `TextRange` 是为了避免 `new` panic；真正的合法性由 `TextBuf::validate_range` 判断。
+- `TextBuf` 暂用 `String` 实现，优先保证边界正确；长文性能优化留到布局/编辑阶段用基准数据决定。
+
+### 下一步
+
+- 1.4～1.6：grapheme 边界、前后移动、UTF-8/UTF-16 转换。
