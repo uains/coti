@@ -381,3 +381,40 @@
 ### 下一步
 
 - 2.2：`BlockKind`、`BlockNode` 与父子类型约束。
+
+## 2026-11-23 · 阶段 2 / 步骤 2.2：Block 模型与父子约束
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `BlockId`：`index + generation`，提供只读访问与 `Display`；为 2.1 Arena 做准备。
+- 新增 `BlockKind` 全部节点类型：Paragraph、Heading、TableCell、CodeBlock、HtmlBlock、MathBlock、FrontMatter、Quote、List、ListItem、Table、TableRow、ThematicBreak、ImageBlock。
+- 新增 `FenceStyle`、`Align`。
+- 新增 `BlockNode`：持有 `BlockId`、`parent`、`BlockKind`；移动节点保留原 ID。
+- 实现容器/叶子判定、`children`/`children_mut`、`inline_content`/`inline_content_mut`、`kind_name`。
+- 实现父子约束 `can_be_child_of`：
+  - List → 仅 ListItem。
+  - Table → 仅 TableRow。
+  - TableRow → 仅 TableCell。
+  - Quote / ListItem → block-level 节点。
+- 实现本地 `BlockKind::validate`：Heading 1..=6、fence 合法性、空 Quote/List/ListItem/Table/TableRow 拒绝、Inline 内容校验。
+- 按已确认方案，`BlockNode` 暂不包含 `source` 字段；SourceHint 归属阶段 4 前决定。
+- 新增 8 个块模型测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy -p md-document --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：76 个测试通过（`md-document` 23 个）。
+
+### 设计说明
+
+- `BlockId` 使用私有字段，避免上层随意构造后误用；`BlockId::new` 仍公开用于反序列化和测试，查不到时返回 `None`。
+- 父子约束先放在 `BlockKind`，Document 只负责验证整棵树；这样规则集中、测试直接。
+- 空容器在 `BlockKind::validate` 层拒绝；解析器需要在容器为空时补空 Paragraph，而不是放宽校验。
+- `Table` 的列数与每行列数一致性需要整棵树上下文，留给 `Document::validate`。
+
+### 下一步
+
+- 2.1：`NodeArena`、Generation、FreeList、暂存与恢复。
