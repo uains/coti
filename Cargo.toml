@@ -26,6 +26,7 @@ md-layout = { path = "crates/md-layout" }
 md-render = { path = "crates/md-render" }
 
 anyhow = "1"
+proptest = "1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

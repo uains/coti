@@ -5,7 +5,9 @@
 //! structure or any UI framework.
 
 mod error;
+mod geometry;
 mod text;
 
 pub use error::{TextError, TextResult};
+pub use geometry::{EdgeInsets, Point, Rect, Size};
 pub use text::{TextBuf, TextOffset, TextRange};

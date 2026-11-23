@@ -309,3 +309,40 @@
 ### 下一步
 
 - 1.9～1.10：几何类型 `Point`/`Size`/`Rect`/`EdgeInsets`，属性测试与边界测试。
+
+## 2026-11-23 · 阶段 1 / 步骤 1.9～1.10：几何类型与属性测试
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `md-core::Point`、`Size`、`Rect`、`EdgeInsets`，使用 `f32`，提供构造、边界、包含、相交、并集、inset、平移等基础方法。
+- `Rect` 使用半开区间 `[left, right)` / `[top, bottom)` 的碰撞语义；`intersect` 在无重叠时返回 `None`。
+- 引入 `proptest = "1"` 作为 `md-core` dev-dependency。
+- 新增 `crates/md-core/tests/text_properties.rs`，覆盖 7 个属性：
+  - UTF-16 编解码往返。
+  - 每个字符边界的 UTF-8 ↔ UTF-16 offset 往返。
+  - grapheme 前进到末尾、后退到起点。
+  - 自切片替换恒等。
+  - 插入后删除往返。
+  - split/concat 往返。
+- 更新 `docs/TESTING.md` 的测试清单、属性测试说明和阶段验收。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：56 个测试通过。
+  - `md-core` 32 个单元测试 + 7 个属性测试。
+- 属性测试生成 ≤64 个 char 的任意 UTF-8 字符串，单次运行约 0.03s。
+
+### 设计说明
+
+- 几何类型只使用 `f32`，不依赖 GPUI 或视觉常量；GPUI 类型转换留在 `md-render`。
+- `Rect::inset` 允许产生负尺寸，不在几何层静默 clamp；布局层需要显式处理无效尺寸。
+- `Size::is_empty` 把负尺寸视为空，便于布局快速跳过；是否允许负尺寸由布局层策略决定。
+- 属性测试只验证已实现的不变式，不提前测试 `DocPos`/Selection。
+
+### 下一步
+
+- 阶段 1 汇总验收，更新 `IMPLEMENTATION.md`，等待确认后进入阶段 2（`md-document` Arena 与 Block 模型）。
