@@ -7,7 +7,7 @@ use md_document::DocumentError;
 #[non_exhaustive]
 pub enum LayoutError {
     /// A document query required for layout failed.
-    #[error(transparent)]
+    #[error("{0}")]
     Document(#[from] DocumentError),
 
     /// A layout environment or geometry value is invalid.
@@ -29,3 +29,35 @@ pub enum LayoutError {
 
 /// Result alias for layout operations.
 pub type LayoutResult<T> = Result<T, LayoutError>;
+
+#[cfg(test)]
+mod tests {
+    use super::LayoutError;
+    use md_document::DocumentError;
+    use std::error::Error;
+
+    #[test]
+    fn geometry_message_includes_reason() {
+        let error = LayoutError::Geometry {
+            message: "negative width".to_owned(),
+        };
+        assert_eq!(error.to_string(), "invalid layout geometry: negative width");
+    }
+
+    #[test]
+    fn missing_layout_message_includes_block_identity() {
+        let error = LayoutError::MissingBlockLayout {
+            index: 7,
+            generation: 2,
+        };
+        assert_eq!(error.to_string(), "layout for block 7:2 is not available");
+    }
+
+    #[test]
+    fn document_error_is_forwarded_with_source() {
+        let error = LayoutError::from(DocumentError::Invariant {
+            message: "bad index".to_owned(),
+        });
+        assert!(error.source().is_some());
+    }
+}

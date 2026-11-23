@@ -21,9 +21,33 @@ pub enum MarkdownError {
     },
 
     /// The document builder rejected a structural change.
-    #[error(transparent)]
+    #[error("{0}")]
     Document(#[from] DocumentError),
 }
 
 /// Result alias for Markdown operations.
 pub type MarkdownResult<T> = Result<T, MarkdownError>;
+
+#[cfg(test)]
+mod tests {
+    use super::MarkdownError;
+    use md_document::DocumentError;
+    use std::error::Error;
+
+    #[test]
+    fn parse_error_message_includes_reason() {
+        let error = MarkdownError::Parse {
+            message: "unclosed fence".to_owned(),
+        };
+        assert_eq!(error.to_string(), "markdown parse failed: unclosed fence");
+    }
+
+    #[test]
+    fn document_error_is_forwarded_with_source() {
+        let error = MarkdownError::from(DocumentError::Invariant {
+            message: "bad child".to_owned(),
+        });
+        assert_eq!(error.to_string(), "document invariant violated: bad child");
+        assert!(error.source().is_some());
+    }
+}

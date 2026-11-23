@@ -7,7 +7,7 @@ use md_core::TextError;
 #[non_exhaustive]
 pub enum DocumentError {
     /// A text operation rejected an offset or range.
-    #[error(transparent)]
+    #[error("{0}")]
     Text(#[from] TextError),
 
     /// An operation would violate a document invariant.
@@ -86,3 +86,38 @@ pub type DocumentResult<T> = Result<T, DocumentError>;
 
 /// Result alias for position resolution.
 pub type PositionResult<T> = Result<T, PositionError>;
+
+#[cfg(test)]
+mod tests {
+    use super::{DocumentError, PositionError};
+    use md_core::TextError;
+    use std::error::Error;
+
+    #[test]
+    fn text_error_is_forwarded_with_source() {
+        let error = DocumentError::from(TextError::NotCharBoundary { offset: 2 });
+        assert_eq!(
+            error.to_string(),
+            "text offset 2 is not a UTF-8 character boundary"
+        );
+        assert!(error.source().is_some());
+    }
+
+    #[test]
+    fn stale_block_message_includes_generation() {
+        let error = DocumentError::StaleBlockId {
+            index: 1,
+            generation: 3,
+        };
+        assert_eq!(error.to_string(), "block id 1:3 is stale or unknown");
+    }
+
+    #[test]
+    fn position_bounds_message_includes_length() {
+        let error = PositionError::DocPosOutOfBounds { pos: 9, len: 4 };
+        assert_eq!(
+            error.to_string(),
+            "document position 9 is out of bounds for length 4"
+        );
+    }
+}

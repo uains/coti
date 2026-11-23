@@ -41,3 +41,33 @@ pub enum TextError {
 
 /// Result alias for text operations.
 pub type TextResult<T> = Result<T, TextError>;
+
+#[cfg(test)]
+mod tests {
+    use super::TextError;
+
+    #[test]
+    fn out_of_bounds_message_includes_offset_and_length() {
+        let error = TextError::OutOfBounds { offset: 4, len: 3 };
+        assert_eq!(
+            error.to_string(),
+            "text offset 4 is out of bounds for 3 bytes"
+        );
+    }
+
+    #[test]
+    fn invalid_range_message_includes_all_fields() {
+        let error = TextError::InvalidRange {
+            start: 4,
+            end: 2,
+            len: 8,
+        };
+        assert_eq!(error.to_string(), "text range 4..2 is invalid for 8 bytes");
+    }
+
+    #[test]
+    fn invalid_utf16_message_includes_index() {
+        let error = TextError::InvalidUtf16 { index: 2 };
+        assert_eq!(error.to_string(), "invalid UTF-16 input at code unit 2");
+    }
+}

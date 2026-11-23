@@ -14,7 +14,7 @@
 
 1. 每个有失败可能的 crate 定义独立错误枚举，例如 `TextError`、`DocumentError`、`PositionError`、`MarkdownError`、`EditorError`、`LayoutError`、`RenderError`。
 2. 错误枚举加 `#[non_exhaustive]`，允许后续增加变体而不破坏下游 match。
-3. 下层错误通过 `#[error(transparent)]` + `#[from]` 上抛，保留 source 链。
+3. 下层错误通过 `#[error("{0}")]` + `#[from]` 上抛：Display 只保留根因文本，`source()` 仍返回被包装的下层错误，保留完整链路。
 4. 变体字段携带定位信息，例如 offset、范围、BlockId 的 index/generation、revision；不要只返回一个字符串。
 5. 不在库内部 `unwrap()`；只有类型系统或前置校验已证明不可失败时才使用 `expect()`，并写明原因。
 6. 库不记录日志代替返回错误；日志由调用边界或 `tracing` span 补充上下文。

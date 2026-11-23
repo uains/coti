@@ -26,3 +26,17 @@ pub fn run() -> anyhow::Result<()> {
     println!("Coti: 日常书写，日结为札");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn logging_initialization_is_idempotent() {
+        super::logging::init();
+        super::logging::init();
+    }
+
+    #[test]
+    fn app_entry_point_succeeds() {
+        assert!(super::run().is_ok());
+    }
+}

@@ -106,7 +106,7 @@
 - 新增 `docs/ERROR_HANDLING.md`，定义库 crate 与应用边界的错误分层、命名、source 链和演进规则。
 - `md-core` 新增 `TextError`：越界、非 UTF-8 字符边界、非法范围、非法 UTF-16。
 - `md-document` 新增 `DocumentError`、`PositionError`，并通过 `#[from]` 承接 `TextError`。
-- `md-markdown`、`md-editor`、`md-layout`、`md-render` 分别新增 `MarkdownError`、`EditorError`、`LayoutError`、`RenderError`，下层错误使用 `#[error(transparent)]` 保留 source。
+- `md-markdown`、`md-editor`、`md-layout`、`md-render` 分别新增 `MarkdownError`、`EditorError`、`LayoutError`、`RenderError`，下层错误使用 `#[error("{0}")]` + `#[from]` 保留 Display 与 source 链。
 - 所有库错误枚举加 `#[non_exhaustive]`；各 crate 提供 `*Result<T>` 别名。
 - `md-app` 改用 `anyhow::Result<()>`，`main` 返回错误时由标准入口打印并退出非零状态。
 - Workspace 新增 `thiserror = "2"`、`anyhow = "1"` 依赖。
@@ -153,3 +153,35 @@
 ### 下一步
 
 - 0.6 配置单元、集成和属性测试基础设施，确保每个 crate 具有基础测试且可独立运行。
+
+## 2026-11-23 · 步骤 0.6：配置单元与集成测试
+
+**状态：** 已完成。
+
+### 变更
+
+- 七个 crate 均加入单元测试：覆盖错误文本、错误分类、source 转发、日志初始化与入口返回值。
+- 新增 `crates/md-app/tests/app_smoke.rs` 集成测试：
+  - 构造 `TextError → DocumentError → LayoutError → RenderError`，验证跨层 source 链至少三层。
+  - 通过 `CARGO_BIN_EXE_coti` 真实启动二进制，断言退出码为 0 且 stdout 包含 `Coti`。
+- 修正包装错误的 source 语义：从 `#[error(transparent)]` 改为 `#[error("{0}")]` + `#[from]`，使中间层不会被 `source()` 跳过。
+- 新增 `docs/TESTING.md`，记录命令、四层测试、当前测试清单、命名与夹具约定。
+- 更新 `docs/ERROR_HANDLING.md` 和 0.4 变更说明，准确描述当前 source 链实现。
+
+### 验证
+
+- `cargo test --workspace`：20 个测试全部通过。
+  - `md-core` 3、`md-document` 3、`md-markdown` 2、`md-editor` 3、`md-layout` 3、`md-render` 2、`md-app` 4。
+- `cargo test -p md-core`：3 个测试通过，可独立运行。
+- `cargo test --workspace --doc`：全部 crate 的文档测试目标可运行。
+- `cargo test -p md-app --test app_smoke`：二进制启动与 source 链测试通过。
+
+### 设计说明
+
+- 阶段 0 不引入 `proptest` 的空壳属性测试；属性测试从阶段 1 的文本边界开始，使用真实不变式。
+- 集成测试只依赖标准库和被测 crate，不访问网络或用户目录，适合 CI。
+- `md-app` 的 lib/bin 拆分让集成测试既能调用装配入口，也能验证真实二进制。
+
+### 下一步
+
+- 0.7 配置 fmt、clippy、CI、依赖分层检查与测试文档入口。

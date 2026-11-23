@@ -7,7 +7,7 @@ use md_document::DocumentError;
 #[non_exhaustive]
 pub enum EditorError {
     /// A document operation rejected the requested change.
-    #[error(transparent)]
+    #[error("{0}")]
     Document(#[from] DocumentError),
 
     /// A transaction was built against an outdated document revision.
@@ -36,3 +36,41 @@ pub enum EditorError {
 
 /// Result alias for editor operations.
 pub type EditorResult<T> = Result<T, EditorError>;
+
+#[cfg(test)]
+mod tests {
+    use super::EditorError;
+    use md_document::DocumentError;
+    use std::error::Error;
+
+    #[test]
+    fn stale_revision_reports_both_revisions() {
+        let error = EditorError::StaleRevision {
+            base: 4,
+            current: 5,
+        };
+        assert_eq!(
+            error.to_string(),
+            "transaction based on revision 4 but document is at 5"
+        );
+    }
+
+    #[test]
+    fn invalid_intent_message_includes_reason() {
+        let error = EditorError::InvalidIntent {
+            message: "no rule matched".to_owned(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "intent cannot be applied in the current context: no rule matched"
+        );
+    }
+
+    #[test]
+    fn document_error_is_forwarded_with_source() {
+        let error = EditorError::from(DocumentError::Invariant {
+            message: "bad selection".to_owned(),
+        });
+        assert!(error.source().is_some());
+    }
+}
