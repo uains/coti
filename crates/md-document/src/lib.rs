@@ -4,5 +4,6 @@
 //! This crate depends on [`md_core`] only. It must remain independent of
 //! Markdown syntax, layout, and UI frameworks.
 
-// Keep this declared crate boundary linked while the module skeleton is empty.
-use md_core as _;
+mod error;
+
+pub use error::{DocumentError, DocumentResult, PositionError, PositionResult};

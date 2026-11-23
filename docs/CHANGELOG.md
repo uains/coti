@@ -96,3 +96,33 @@
 ### 下一步
 
 - 0.4 配置统一错误处理：每个库 crate 使用 `thiserror` 定义可分类错误，`md-app` 使用 `anyhow` 聚合边界错误。
+
+## 2026-11-23 · 步骤 0.4：统一错误处理
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `docs/ERROR_HANDLING.md`，定义库 crate 与应用边界的错误分层、命名、source 链和演进规则。
+- `md-core` 新增 `TextError`：越界、非 UTF-8 字符边界、非法范围、非法 UTF-16。
+- `md-document` 新增 `DocumentError`、`PositionError`，并通过 `#[from]` 承接 `TextError`。
+- `md-markdown`、`md-editor`、`md-layout`、`md-render` 分别新增 `MarkdownError`、`EditorError`、`LayoutError`、`RenderError`，下层错误使用 `#[error(transparent)]` 保留 source。
+- 所有库错误枚举加 `#[non_exhaustive]`；各 crate 提供 `*Result<T>` 别名。
+- `md-app` 改用 `anyhow::Result<()>`，`main` 返回错误时由标准入口打印并退出非零状态。
+- Workspace 新增 `thiserror = "2"`、`anyhow = "1"` 依赖。
+
+### 验证
+
+- `cargo build --workspace`：成功，无警告。
+- `cargo test --workspace`：成功。
+- `cargo run -p md-app`：正常输出启动信息，退出码 0。
+
+### 设计说明
+
+- 库 crate 不暴露 `anyhow::Error`，保持错误可分类、可匹配；`anyhow` 只用于应用装配边界。
+- 错误变体携带 offset、范围、BlockId 的 index/generation、revision 等定位字段，便于 tracing 和用户提示。
+- 错误枚举标注 `#[non_exhaustive]`，后续阶段可以增加变体而不破坏下游匹配。
+
+### 下一步
+
+- 0.5 配置 tracing：库 crate 使用结构化 `tracing` 事件，`md-app` 初始化 subscriber 并支持 `RUST_LOG`。

@@ -14,6 +14,9 @@ md-editor = { path = "crates/md-editor" }
 md-layout = { path = "crates/md-layout" }
 md-render = { path = "crates/md-render" }
 
+anyhow = "1"
+thiserror = "2"
+
 # GPUI is intentionally absent from the active dependency graph during phases 0-7.
 # When md-render/md-app adopt it, reuse the revision recorded by the original
 # project scaffold: f4fe0be1f8c7974db07e01c5cd05bee0cf4eb8d9

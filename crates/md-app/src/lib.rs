@@ -14,6 +14,11 @@ use md_markdown as _;
 use md_render as _;
 
 /// Runs the Coti application.
-pub fn run() {
+///
+/// # Errors
+///
+/// Returns an error when application startup or the main event loop fails.
+pub fn run() -> anyhow::Result<()> {
     println!("Coti: 日常书写，日结为札");
+    Ok(())
 }

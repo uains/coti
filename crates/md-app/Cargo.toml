@@ -6,6 +6,7 @@ description = "Coti desktop application assembly"
 publish = false
 
 [dependencies]
+anyhow.workspace = true
 md-core.workspace = true
 md-document.workspace = true
 md-markdown.workspace = true

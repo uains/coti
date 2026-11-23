@@ -5,6 +5,9 @@
 //! resources. Visual values arrive through `ResolvedStyle` values supplied by
 //! the renderer.
 
-// Keep these declared crate boundaries linked while the module skeleton is empty.
+mod error;
+
+pub use error::{LayoutError, LayoutResult};
+
+// Keep this declared crate boundary linked while the module skeleton is empty.
 use md_core as _;
-use md_document as _;

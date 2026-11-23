@@ -6,3 +6,4 @@ description = "Coti core text and geometry primitives"
 publish = false
 
 [dependencies]
+thiserror.workspace = true

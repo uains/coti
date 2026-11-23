@@ -8,3 +8,4 @@ publish = false
 [dependencies]
 md-core.workspace = true
 md-document.workspace = true
+thiserror.workspace = true

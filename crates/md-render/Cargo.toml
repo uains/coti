@@ -10,3 +10,4 @@ md-core.workspace = true
 md-document.workspace = true
 md-editor.workspace = true
 md-layout.workspace = true
+thiserror.workspace = true

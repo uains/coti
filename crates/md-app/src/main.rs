@@ -1,3 +1,3 @@
-fn main() {
-    md_app::run();
+fn main() -> anyhow::Result<()> {
+    md_app::run()
 }
