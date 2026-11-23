@@ -252,3 +252,32 @@
 ### 下一步
 
 - 1.4～1.6：grapheme 边界、前后移动、UTF-8/UTF-16 转换。
+
+## 2026-11-23 · 阶段 1 / 步骤 1.4～1.6：Grapheme 与 UTF-16
+
+**状态：** 已完成。
+
+### 变更
+
+- 引入 `unicode-segmentation = "1"`。
+- `TextBuf` 新增 `is_grapheme_boundary`、`next_grapheme_boundary`、`prev_grapheme_boundary`，使用 `GraphemeCursor` 按扩展 grapheme 规则移动。
+- `TextBuf` 新增 `len_utf16`、`to_utf16`、`from_utf16`、`utf8_to_utf16`、`utf16_to_utf8`。
+- `TextError` 新增 `Utf16OutOfBounds`、`NotUtf16Boundary`，分别处理越界和代理对中间位置。
+- 新增 9 个测试：组合字符、ZWJ 家庭 Emoji、空/ASCII 边界、非字符边界拒绝、UTF-16 往返、双向 offset 转换、非法 UTF-16。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：36 个测试通过（`md-core` 19 个）。
+
+### 设计说明
+
+- `GraphemeCursor` 使用完整文本和 `chunk_start = 0`；当前阶段不做分块增量，但避免了每次从字符串头部重新枚举。
+- `next_grapheme_boundary` / `prev_grapheme_boundary` 对非 UTF-8 字符边界返回 `None`，不静默吸附；调用方必须先保证 offset 合法。
+- UTF-16 offset 指向代理对中间时返回 `NotUtf16Boundary`，不猜测前后位置；IME 适配层需要显式处理该错误。
+- 用户级左右移动仍由上层调用 grapheme API，禁止对 `TextOffset` 直接 `+1/-1`。
+
+### 下一步
+
+- 1.7～1.8：文本插入、删除、替换，以及区间拆分与合并。

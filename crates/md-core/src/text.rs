@@ -3,6 +3,8 @@
 use std::fmt;
 use std::ops::Range;
 
+use unicode_segmentation::GraphemeCursor;
+
 use crate::{TextError, TextResult};
 
 /// A byte offset into UTF-8 text.
@@ -193,6 +195,59 @@ impl TextBuf {
         offset.get() <= self.text.len() && self.text.is_char_boundary(offset.get())
     }
 
+    /// Returns `true` when `offset` is a grapheme cluster boundary.
+    ///
+    /// Returns `false` for offsets out of bounds, inside a UTF-8 code point, or
+    /// inside a multi-code-point grapheme cluster.
+    #[must_use]
+    pub fn is_grapheme_boundary(&self, offset: TextOffset) -> bool {
+        let value = offset.get();
+        if value > self.text.len() || !self.text.is_char_boundary(value) {
+            return false;
+        }
+
+        let mut cursor = GraphemeCursor::new(value, self.text.len(), true);
+        cursor.is_boundary(self.text.as_str(), 0).unwrap_or(false)
+    }
+
+    /// Returns the next grapheme cluster boundary after `offset`.
+    ///
+    /// Returns `None` at the end of the buffer, outside the buffer, or when
+    /// `offset` is not a UTF-8 character boundary.
+    #[must_use]
+    pub fn next_grapheme_boundary(&self, offset: TextOffset) -> Option<TextOffset> {
+        let value = offset.get();
+        if value >= self.text.len() || !self.text.is_char_boundary(value) {
+            return None;
+        }
+
+        let mut cursor = GraphemeCursor::new(value, self.text.len(), true);
+        cursor
+            .next_boundary(self.text.as_str(), 0)
+            .ok()
+            .flatten()
+            .map(TextOffset::new)
+    }
+
+    /// Returns the previous grapheme cluster boundary before `offset`.
+    ///
+    /// Returns `None` at the start of the buffer, outside the buffer, or when
+    /// `offset` is not a UTF-8 character boundary.
+    #[must_use]
+    pub fn prev_grapheme_boundary(&self, offset: TextOffset) -> Option<TextOffset> {
+        let value = offset.get();
+        if value == 0 || value > self.text.len() || !self.text.is_char_boundary(value) {
+            return None;
+        }
+
+        let mut cursor = GraphemeCursor::new(value, self.text.len(), true);
+        cursor
+            .prev_boundary(self.text.as_str(), 0)
+            .ok()
+            .flatten()
+            .map(TextOffset::new)
+    }
+
     /// Validates that `offset` is inside the buffer and on a character boundary.
     ///
     /// # Errors
@@ -245,6 +300,90 @@ impl TextBuf {
     pub fn slice(&self, range: TextRange) -> TextResult<&str> {
         self.validate_range(range)?;
         Ok(&self.text[range.start().get()..range.end().get()])
+    }
+
+    /// Returns the text length in UTF-16 code units.
+    #[must_use]
+    pub fn len_utf16(&self) -> usize {
+        self.text.encode_utf16().count()
+    }
+
+    /// Returns the text encoded as UTF-16 code units.
+    #[must_use]
+    pub fn to_utf16(&self) -> Vec<u16> {
+        self.text.encode_utf16().collect()
+    }
+
+    /// Converts a UTF-8 byte offset into a UTF-16 code unit offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns a boundary error when `offset` is out of bounds or not a UTF-8
+    /// character boundary.
+    pub fn utf8_to_utf16(&self, offset: TextOffset) -> TextResult<usize> {
+        self.validate_offset(offset)?;
+        Ok(self.text[..offset.get()].encode_utf16().count())
+    }
+
+    /// Converts a UTF-16 code unit offset into a UTF-8 byte offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TextError::Utf16OutOfBounds`] past the end of the text and
+    /// [`TextError::NotUtf16Boundary`] when the offset splits a surrogate pair.
+    pub fn utf16_to_utf8(&self, utf16_offset: usize) -> TextResult<TextOffset> {
+        let len = self.len_utf16();
+        if utf16_offset > len {
+            return Err(TextError::Utf16OutOfBounds {
+                offset: utf16_offset,
+                len,
+            });
+        }
+
+        let mut units = 0;
+        for (byte, character) in self.text.char_indices() {
+            if units == utf16_offset {
+                return Ok(TextOffset::new(byte));
+            }
+
+            units += character.len_utf16();
+            if units > utf16_offset {
+                return Err(TextError::NotUtf16Boundary {
+                    offset: utf16_offset,
+                });
+            }
+        }
+
+        if units == utf16_offset {
+            Ok(TextOffset::new(self.text.len()))
+        } else {
+            Err(TextError::Utf16OutOfBounds {
+                offset: utf16_offset,
+                len,
+            })
+        }
+    }
+
+    /// Builds a buffer from UTF-16 code units.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TextError::InvalidUtf16`] at the first unpaired surrogate.
+    pub fn from_utf16(units: &[u16]) -> TextResult<Self> {
+        let mut text = String::with_capacity(units.len());
+        let mut index = 0;
+
+        for decoded in char::decode_utf16(units.iter().copied()) {
+            match decoded {
+                Ok(character) => {
+                    text.push(character);
+                    index += character.len_utf16();
+                }
+                Err(_) => return Err(TextError::InvalidUtf16 { index }),
+            }
+        }
+
+        Ok(Self { text })
     }
 }
 
@@ -370,5 +509,102 @@ mod tests {
         assert!(range(2, 2).is_empty());
         assert!(range(1, 3).contains(offset(1)));
         assert!(!range(1, 3).contains(offset(3)));
+    }
+
+    #[test]
+    fn grapheme_boundaries_cover_combining_marks() {
+        let buffer = TextBuf::from("e\u{301}x");
+        assert_eq!(buffer.len_bytes(), 4);
+        assert!(buffer.is_grapheme_boundary(offset(0)));
+        assert!(!buffer.is_grapheme_boundary(offset(1)));
+        assert!(buffer.is_grapheme_boundary(offset(3)));
+        assert!(buffer.is_grapheme_boundary(offset(4)));
+        assert_eq!(buffer.next_grapheme_boundary(offset(0)), Some(offset(3)));
+        assert_eq!(buffer.next_grapheme_boundary(offset(1)), Some(offset(3)));
+        assert_eq!(buffer.prev_grapheme_boundary(offset(1)), Some(offset(0)));
+        assert_eq!(buffer.prev_grapheme_boundary(offset(4)), Some(offset(3)));
+    }
+
+    #[test]
+    fn grapheme_boundaries_cover_zwj_emoji() {
+        let family = TextBuf::from("👨‍👩‍👧‍👦");
+        assert_eq!(family.next_grapheme_boundary(offset(0)), Some(offset(25)));
+        assert_eq!(family.prev_grapheme_boundary(offset(25)), Some(offset(0)));
+        assert!(family.is_grapheme_boundary(offset(25)));
+        assert!(!family.is_grapheme_boundary(offset(4)));
+    }
+
+    #[test]
+    fn grapheme_movement_handles_edges() {
+        let empty = TextBuf::new();
+        assert_eq!(empty.next_grapheme_boundary(offset(0)), None);
+        assert_eq!(empty.prev_grapheme_boundary(offset(0)), None);
+
+        let ascii = TextBuf::from("abc");
+        assert_eq!(ascii.next_grapheme_boundary(offset(0)), Some(offset(1)));
+        assert_eq!(ascii.prev_grapheme_boundary(offset(3)), Some(offset(2)));
+        assert_eq!(ascii.next_grapheme_boundary(offset(3)), None);
+        assert_eq!(ascii.prev_grapheme_boundary(offset(0)), None);
+        assert_eq!(ascii.next_grapheme_boundary(offset(4)), None);
+        assert_eq!(ascii.prev_grapheme_boundary(offset(4)), None);
+    }
+
+    #[test]
+    fn grapheme_movement_rejects_non_character_boundaries() {
+        let buffer = TextBuf::from("你好");
+        assert_eq!(buffer.next_grapheme_boundary(offset(1)), None);
+        assert_eq!(buffer.prev_grapheme_boundary(offset(1)), None);
+        assert!(!buffer.is_grapheme_boundary(offset(1)));
+    }
+
+    #[test]
+    fn utf16_roundtrip_for_mixed_text() {
+        let buffer = TextBuf::from("a你😀");
+        let units = buffer.to_utf16();
+        assert_eq!(buffer.len_utf16(), 4);
+        assert_eq!(units.len(), 4);
+        assert_eq!(TextBuf::from_utf16(&units).unwrap(), buffer);
+    }
+
+    #[test]
+    fn utf8_and_utf16_offsets_convert_both_ways() {
+        let buffer = TextBuf::from("a你😀");
+        for (byte, units) in [(0, 0), (1, 1), (4, 2), (8, 4)] {
+            assert_eq!(buffer.utf8_to_utf16(offset(byte)), Ok(units));
+            assert_eq!(buffer.utf16_to_utf8(units), Ok(offset(byte)));
+        }
+
+        assert!(matches!(
+            buffer.utf16_to_utf8(3),
+            Err(TextError::NotUtf16Boundary { offset: 3 })
+        ));
+        assert!(matches!(
+            buffer.utf16_to_utf8(5),
+            Err(TextError::Utf16OutOfBounds { offset: 5, len: 4 })
+        ));
+        assert!(matches!(
+            buffer.utf8_to_utf16(offset(2)),
+            Err(TextError::NotCharBoundary { offset: 2 })
+        ));
+    }
+
+    #[test]
+    fn invalid_utf16_is_rejected_at_the_right_index() {
+        assert!(matches!(
+            TextBuf::from_utf16(&[0xD800]),
+            Err(TextError::InvalidUtf16 { index: 0 })
+        ));
+        assert!(matches!(
+            TextBuf::from_utf16(&[0xDC00]),
+            Err(TextError::InvalidUtf16 { index: 0 })
+        ));
+        assert!(matches!(
+            TextBuf::from_utf16(&[0xD800, 0x0041]),
+            Err(TextError::InvalidUtf16 { index: 0 })
+        ));
+        assert!(matches!(
+            TextBuf::from_utf16(&[0x0041, 0xD800]),
+            Err(TextError::InvalidUtf16 { index: 1 })
+        ));
     }
 }

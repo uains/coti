@@ -29,6 +29,7 @@ anyhow = "1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-segmentation = "1"
 
 # GPUI is intentionally absent from the active dependency graph during phases 0-7.
 # When md-render/md-app adopt it, reuse the revision recorded by the original

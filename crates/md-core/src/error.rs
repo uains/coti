@@ -37,6 +37,22 @@ pub enum TextError {
         /// Index of the first invalid UTF-16 code unit.
         index: usize,
     },
+
+    /// A UTF-16 offset is beyond the end of the text.
+    #[error("UTF-16 offset {offset} is out of bounds for {len} code units")]
+    Utf16OutOfBounds {
+        /// The rejected UTF-16 offset.
+        offset: usize,
+        /// The text length in UTF-16 code units.
+        len: usize,
+    },
+
+    /// A UTF-16 offset splits a surrogate pair.
+    #[error("UTF-16 offset {offset} splits a surrogate pair")]
+    NotUtf16Boundary {
+        /// The rejected UTF-16 offset.
+        offset: usize,
+    },
 }
 
 /// Result alias for text operations.
@@ -69,5 +85,20 @@ mod tests {
     fn invalid_utf16_message_includes_index() {
         let error = TextError::InvalidUtf16 { index: 2 };
         assert_eq!(error.to_string(), "invalid UTF-16 input at code unit 2");
+    }
+
+    #[test]
+    fn utf16_out_of_bounds_message_includes_length() {
+        let error = TextError::Utf16OutOfBounds { offset: 4, len: 2 };
+        assert_eq!(
+            error.to_string(),
+            "UTF-16 offset 4 is out of bounds for 2 code units"
+        );
+    }
+
+    #[test]
+    fn not_utf16_boundary_message_includes_offset() {
+        let error = TextError::NotUtf16Boundary { offset: 1 };
+        assert_eq!(error.to_string(), "UTF-16 offset 1 splits a surrogate pair");
     }
 }
