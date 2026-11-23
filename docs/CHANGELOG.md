@@ -126,3 +126,30 @@
 ### 下一步
 
 - 0.5 配置 tracing：库 crate 使用结构化 `tracing` 事件，`md-app` 初始化 subscriber 并支持 `RUST_LOG`。
+
+## 2026-11-23 · 步骤 0.5：配置 tracing 日志
+
+**状态：** 已完成。
+
+### 变更
+
+- Workspace 新增 `tracing = "0.1"`、`tracing-subscriber = { version = "0.3", features = ["env-filter"] }`。
+- `md-app` 新增 `logging` 模块：从 `RUST_LOG` 读取过滤级别，未设置时默认 `info`，重复初始化安全。
+- `md-app::run()` 在启动时初始化 subscriber，并记录 `starting Coti` 的 info 事件。
+- 新增 `docs/OBSERVABILITY.md`，定义日志入口、分层记录内容、span 字段、隐私与性能约束。
+
+### 验证
+
+- `cargo build --workspace`：成功。
+- `cargo run -p md-app`：输出带时间戳的 `INFO md_app: starting Coti`，随后输出应用启动信息。
+- `RUST_LOG=md_app=debug cargo run -p md-app`：环境变量过滤生效。
+
+### 设计说明
+
+- 只在应用边界初始化 subscriber；库 crate 在真正产生关键操作时再添加 `tracing` 依赖和 span，避免空日志和热路径开销。
+- 默认不记录正文，只记录长度、块数、offset、耗时等摘要；正文诊断需要显式开启 `trace`。
+- 当前时间戳为 UTC；若发布阶段需要本地时间，再引入 `time`/本地时区支持，不影响日志接口。
+
+### 下一步
+
+- 0.6 配置单元、集成和属性测试基础设施，确保每个 crate 具有基础测试且可独立运行。
