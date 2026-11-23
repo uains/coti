@@ -346,3 +346,38 @@
 ### 下一步
 
 - 阶段 1 汇总验收，更新 `IMPLEMENTATION.md`，等待确认后进入阶段 2（`md-document` Arena 与 Block 模型）。
+
+## 2026-11-23 · 阶段 2 / 步骤 2.3（第一批）：Inline 基础类型
+
+**状态：** 已完成。
+
+### 变更
+
+- 实际实施顺序调整为 **2.3 → 2.2 → 2.1 → 2.4**，因为 `BlockKind` 引用 `InlineContent`。
+- 新增 `md-document` 的 `MarkFlags`（bitflags）、`Marks`、`LinkRef`、`ImageRef`、`AtomKind`、`Run`、`InlineContent`。
+- `Run` 支持 Text / Atom 两种形态；Text 长度按 UTF-8 字节，Atom 固定占 1 个 `DocPos` 单位。
+- `InlineContent` 支持：
+  - `from_text`、`push_run`、`insert_run`、`remove_run`。
+  - `push_text`（相同 Marks 自动合并）、`push_atom`。
+  - `split_text_run`（按 UTF-8 边界拆分，保留两侧 Marks）。
+  - `normalize`（合并相邻同 Marks Text Run、删除空 Text Run）。
+  - `validate`（长度、空 Run、相邻同 Marks Run）。
+- 新增 `bitflags = "2"` 依赖。
+- 新增 11 个 `md-document` 单元测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy -p md-document --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：67 个测试通过（`md-document` 14 个）。
+
+### 设计说明
+
+- `InlineContent.runs` 保持私有，只暴露 `&[Run]`；外部不能绕过 `len` 缓存直接修改文本。
+- `Marks` 字段公开以便构造，但 `InlineContent` 的修改 API 会维护长度和不变量。
+- `split_text_run` 在 run 起点/终点返回 `false`，不制造空 Run；空 Run 由 Normalizer 处理。
+- `push_run` 拒绝空 Text Run；`normalize` 仍保留空 Run 清理路径，供解析/逆操作等内部路径使用。
+
+### 下一步
+
+- 2.2：`BlockKind`、`BlockNode` 与父子类型约束。

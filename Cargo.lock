@@ -233,6 +233,7 @@ dependencies = [
 name = "md-document"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "md-core",
  "thiserror",
 ]
