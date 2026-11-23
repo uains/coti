@@ -1203,7 +1203,7 @@ docs/
 
 > 本节记录真实实现状态，与设计基线分开维护。`DESIGN.md` 的定义不因本节勾选而改变；代码已写出不等于已经通过阶段验收。
 
-### 阶段 0：工程基础设施（已完成，等待确认）
+### 阶段 0：工程基础设施（已完成，已确认）
 
 **完成日期：** 2026-11-23
 
@@ -1245,5 +1245,51 @@ docs/
 #### 下一步
 
 - 阶段 1：`md-core` 文本基础设施。建议从 1.1 开始：`TextOffset`、`TextRange`，按 ADR-0002 不包含 `DocPos`；完成后再进入 `TextBuf` 与 UTF-8/grapheme 工具。
+
+### 阶段 1：`md-core` 文本基础设施（已完成，等待确认）
+
+**完成日期：** 2026-11-23
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 1.1 定义 TextOffset、TextRange | 完成 | newtype、半开区间、`Range<usize>` 转换 |
+| 1.2 实现 TextBuf | 完成 | 内部 `String`、受控访问、显示与转换 |
+| 1.3 UTF-8 字节边界验证 | 完成 | `is_char_boundary`、`validate_offset`、`validate_range`、`slice` |
+| 1.4 Grapheme Cluster 边界查询 | 完成 | `is_grapheme_boundary`，基于 `unicode-segmentation` |
+| 1.5 前后 Grapheme 移动 | 完成 | `next_grapheme_boundary`、`prev_grapheme_boundary` |
+| 1.6 UTF-8 与 UTF-16 转换 | 完成 | `to_utf16`、`from_utf16`、双向 offset 转换 |
+| 1.7 文本插入、删除、替换 | 完成 | `insert`、`remove`、`replace`，失败不改缓冲区 |
+| 1.8 文本区间拆分与合并 | 完成 | `split_off`、`append`、`append_buf`、`concat`、`TextRange::split_at` |
+| 1.9 Point、Rect、Size、EdgeInsets | 完成 | `f32` 几何原语、包含/相交/并集/inset/平移 |
+| 1.10 属性测试与边界测试 | 完成 | 7 个 `proptest` 属性 + CJK/Emoji/组合字符边界测试 |
+
+#### 当前接口
+
+- `md_core::{TextOffset, TextRange, TextBuf, TextError, TextResult}`。
+- `md_core::{Point, Size, Rect, EdgeInsets}`。
+- 文本 API：边界验证、切片、插入/删除/替换、拆分/合并、grapheme 导航、UTF-8/UTF-16 转换。
+- 依赖：`thiserror`、`unicode-segmentation`；dev-dependency：`proptest`。
+- `DocPos` 尚未实现，按 ADR-0002 留在 `md-document`。
+
+#### 验证结果
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：56 个测试通过。
+  - `md-core` 32 个单元测试 + 7 个属性测试。
+- 属性测试覆盖 UTF-16 往返、offset 往返、grapheme 全量遍历、替换/插入删除/split-concat 往返。
+- `./scripts/check-layering.ps1`：通过；`md-core` 依赖树仍无 GPUI。
+
+#### 已知问题与偏差
+
+- `TextBuf` 基于 `String`，插入/删除为 O(n)；正确性优先，长文性能优化在布局/编辑阶段用基准决定是否引入 rope。
+- `TextRange` 允许暂时 reversed；调用方必须使用 `TextBuf::validate_range` 或 `TextRange::is_valid`，不能直接切片。
+- `GraphemeCursor` 当前使用完整文本、`chunk_start = 0`；尚未做分块增量。
+- `Rect::inset` 可产生负尺寸，几何层不 clamp；布局层必须显式处理。
+- Windows 工作区仍有 Git 的 LF→CRLF 提示；提交内容为 LF，不影响构建。
+
+#### 下一步
+
+- 阶段 2：`md-document`。建议按 2.1 NodeArena/Generation/FreeList、2.2 BlockKind、2.3 InlineContent/Run/Marks、2.4 Document/Validator 四批实施，最后做随机结构不变式测试。
 
 ---
