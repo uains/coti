@@ -418,3 +418,39 @@
 ### 下一步
 
 - 2.1：`NodeArena`、Generation、FreeList、暂存与恢复。
+
+## 2026-11-23 · 阶段 2 / 步骤 2.1：NodeArena 与节点生命周期
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `NodeArena`、内部 `NodeSlot` 与 `NodeArena::validate`。
+- `BlockId` 由 `index + generation` 组成；槽位释放时 generation 递增，旧 ID 立即失效。
+- 实现 `alloc`、`get`、`get_mut`（crate 内）、`contains`、`iter`。
+- 实现三种生命周期：
+  - `free`：立即释放并回收槽位，适合无 Undo 需求的清理。
+  - `stage`：节点转入 staged 状态，从 live 视图隐藏，但保留原 ID 和内容。
+  - `restore`：用原 ID/generation 恢复 staged 节点。
+  - `release_staged`：永久释放 staged 节点并递增 generation。
+- FreeList 复用槽位；generation 达到 `u32::MAX` 后不再回收该槽位，避免 generation 回绕让旧 ID 重新有效。
+- `validate` 校验 live/staged/free 数量、节点 ID 与槽位匹配、free list 无重复/越界/占用。
+- 新增 8 个 Arena 测试：分配、释放后复用、generation 失效、staging/restore/release、非法操作、迭代跳过、free list、`get_mut`。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy -p md-document --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：84 个测试通过（`md-document` 31 个）。
+
+### 设计说明
+
+- staged 节点不计入 `len`，但保留槽位与 generation；只有 `release_staged` 才递增 generation，因此 Undo 可以用原 `BlockId` 恢复。
+- 事务层应使用 `stage`/`restore`/`release_staged`；`free` 明确标注为非 Undo 安全的快速路径。
+- `alloc` 的 `u32` 索引空间耗尽会 panic；这属于 40 亿节点以上的硬上限，不是可恢复的用户错误。
+- `NodeArena` 不校验 parent 是否存在或类型是否匹配；这些规则由 `Document` 统一验证。
+
+### 下一步
+
+- 2.3 第二批：Inline Normalizer 已完成基础合并；补充映射准备与更多边界测试。
+- 之后进入 2.4 `Document`。
