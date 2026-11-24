@@ -1643,7 +1643,19 @@ impl Editor {
         transaction.push(operation);
         self.commit(transaction)?;
 
-        self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Upstream));
+        let empty = self
+            .document
+            .kind(block_id)
+            .and_then(BlockKind::inline_content)
+            .is_none_or(|content| content.plain_text().is_empty());
+        self.selection = SelectionSet::new(Selection::collapsed(
+            from,
+            if empty {
+                Affinity::Downstream
+            } else {
+                Affinity::Upstream
+            },
+        ));
         self.pending_marks = None;
         self.state_revision += 1;
         Ok(())
@@ -2343,6 +2355,40 @@ mod tests {
                 .any(|run| matches!(run.atom_kind(), Some(md_document::AtomKind::HardBreak)))
         );
         assert_eq!(editor.document().root_children().len(), 2);
+    }
+
+    #[test]
+    fn backspace_on_emptied_line_removes_that_line() {
+        let source = "one\n\nabc\n\ndef\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let leaf = index
+            .leaf_order()
+            .iter()
+            .find(|leaf| {
+                parsed
+                    .document()
+                    .kind(**leaf)
+                    .and_then(BlockKind::inline_content)
+                    .is_some_and(|content| content.plain_text() == "abc")
+            })
+            .copied()
+            .unwrap();
+        let leaf_index = index.leaf_index(leaf).unwrap();
+        let start = index.leaf_start(leaf_index).unwrap();
+        let len = index.leaf_len(leaf_index).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(start + len),
+            Affinity::Upstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        for _ in 0..4 {
+            editor.dispatch(Intent::DeleteBackward).unwrap();
+        }
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(!output.contains("abc"), "unexpected output: {output:?}");
+        assert_eq!(editor.document().root_children().len(), 2);
+        assert!(editor.document().validate().is_ok());
     }
 
     #[test]

@@ -1432,3 +1432,11 @@
 - 非末尾行连续删除时，第二次仍在当前行删除，不会解析到下一块并合并。
 - 新增 `repeated_backspace_at_line_end_does_not_join_next_line`。
 - 304 个测试通过。
+
+## 2026-11-24 · 修复空行 Backspace 直接跳到上一行
+
+- 删除后根据块是否为空设置 affinity：
+  - 仍非空：Upstream，连续删除留在当前行。
+  - 已删空：Downstream，下一次 Backspace 命中空行本身并删除当前行。
+- 新增 `backspace_on_emptied_line_removes_that_line`。
+- 305 个测试通过。
