@@ -1054,11 +1054,7 @@ impl Editor {
             });
         }
         let parent = self.document.parent(start.block_id);
-        if parent != self.document.parent(end.block_id) {
-            return Err(EditorError::InvalidIntent {
-                message: "cross-container deletion is not implemented".to_owned(),
-            });
-        }
+        let end_parent = self.document.parent(end.block_id);
         let leaf_ids = index.leaf_order().to_vec();
         let first_len = self
             .document
@@ -1067,6 +1063,47 @@ impl Editor {
             .ok_or_else(|| EditorError::InvalidIntent {
                 message: "range start is not a text leaf".to_owned(),
             })?;
+
+        if parent != end_parent {
+            let mut transaction = Transaction::new(self.document_revision());
+            transaction.push(Operation::ReplaceText {
+                block_id: start.block_id,
+                range: TextRange::new(TextOffset::new(start.offset), TextOffset::new(first_len)),
+                text: String::new(),
+                marks: Marks::plain(),
+            });
+            transaction.push(Operation::ReplaceText {
+                block_id: end.block_id,
+                range: TextRange::new(TextOffset::new(0), TextOffset::new(end.offset)),
+                text: String::new(),
+                marks: Marks::plain(),
+            });
+            for leaf in &leaf_ids[start_leaf + 1..end_leaf] {
+                if self
+                    .document
+                    .kind(*leaf)
+                    .and_then(BlockKind::inline_content)
+                    .is_some()
+                {
+                    transaction.push(Operation::SetInlineContent {
+                        block_id: *leaf,
+                        content: md_document::InlineContent::new(),
+                    });
+                } else {
+                    transaction.push(Operation::SetRawText {
+                        block_id: *leaf,
+                        text: md_core::TextBuf::new(),
+                    });
+                }
+            }
+            self.commit(transaction)?;
+            self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
+            self.pending_marks = None;
+            self.state_revision += 1;
+            return Ok(());
+        }
+
+        let leaf_ids = index.leaf_order().to_vec();
         for leaf in &leaf_ids[start_leaf..=end_leaf] {
             if self.document.parent(*leaf) != parent
                 || !matches!(
@@ -2530,6 +2567,32 @@ mod tests {
         let output = md_markdown::serialize_document(editor.document(), source);
         assert!(output.starts_with("a\n"), "unexpected output: {output:?}");
         assert!(output.contains("- b"), "unexpected output: {output:?}");
+        assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn delete_range_across_list_items_clears_interior() {
+        let source = "- ab\n- cd\n- ef\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let leaves = index.leaf_order().to_vec();
+        let start = index
+            .leaf_start(index.leaf_index(leaves[0]).unwrap())
+            .unwrap()
+            + 1;
+        let end = index
+            .leaf_start(index.leaf_index(leaves[2]).unwrap())
+            .unwrap()
+            + 1;
+        let selection = SelectionSet::new(Selection::range(
+            Anchor::new(DocPos::new(start), Affinity::Downstream),
+            Anchor::new(DocPos::new(end), Affinity::Downstream),
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("- a"), "unexpected output: {output:?}");
+        assert!(output.contains("- f"), "unexpected output: {output:?}");
         assert!(editor.document().validate().is_ok());
     }
 

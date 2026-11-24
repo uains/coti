@@ -214,6 +214,35 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
             }
         }
         LayoutKind::Table => {
+            for rect in [
+                Rect::new(block.rect.left(), block.rect.top(), block.rect.width(), 1.0),
+                Rect::new(
+                    block.rect.left(),
+                    block.rect.bottom() - 1.0,
+                    block.rect.width(),
+                    1.0,
+                ),
+                Rect::new(
+                    block.rect.left(),
+                    block.rect.top(),
+                    1.0,
+                    block.rect.height(),
+                ),
+                Rect::new(
+                    block.rect.right() - 1.0,
+                    block.rect.top(),
+                    1.0,
+                    block.rect.height(),
+                ),
+            ] {
+                plan.push(
+                    PaintLayer::Decorations,
+                    PaintCommand::FillRect {
+                        rect,
+                        color: theme.border,
+                    },
+                );
+            }
             for (row_index, row) in block.children.iter().enumerate() {
                 if row_index == 0 {
                     plan.push(
@@ -224,18 +253,20 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                         },
                     );
                 }
-                plan.push(
-                    PaintLayer::Decorations,
-                    PaintCommand::FillRect {
-                        rect: Rect::new(
-                            row.rect.left(),
-                            row.rect.bottom() - 1.0,
-                            row.rect.width(),
-                            1.0,
-                        ),
-                        color: theme.border,
-                    },
-                );
+                if row_index + 1 < block.children.len() {
+                    plan.push(
+                        PaintLayer::Decorations,
+                        PaintCommand::FillRect {
+                            rect: Rect::new(
+                                block.rect.left(),
+                                row.rect.bottom() - 1.0,
+                                block.rect.width(),
+                                1.0,
+                            ),
+                            color: theme.border,
+                        },
+                    );
+                }
                 for cell in &row.children {
                     plan.push(
                         PaintLayer::Decorations,
@@ -274,14 +305,18 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                 } else {
                     plan.push(
                         PaintLayer::Decorations,
-                        PaintCommand::FillRect {
+                        PaintCommand::Text {
                             rect: Rect::new(
-                                item.rect.left() - 14.0,
-                                item.rect.top() + theme.line_height * 0.55,
-                                4.0,
-                                4.0,
+                                item.rect.left() - 16.0,
+                                item.rect.top(),
+                                12.0,
+                                theme.line_height,
                             ),
+                            text: "•".to_owned(),
                             color: theme.list_marker,
+                            font_size: theme.font_size,
+                            font_weight: 400.0,
+                            mono: false,
                         },
                     );
                 }

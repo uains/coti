@@ -289,7 +289,9 @@ impl AppWindow {
 
     /// Rebuilds the render view after edits or resize.
     pub fn sync_view(&mut self) {
+        let scroll = self.view.scroll.offset_y;
         self.view = Self::build_view(&self.state, self.viewport);
+        self.view.scroll.offset_y = scroll;
         self.layout_revision = u64::MAX;
     }
 
@@ -360,8 +362,9 @@ pub fn default_config_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppState, atomic_write, default_config_path};
+    use super::{AppState, AppWindow, atomic_write, default_config_path};
     use crate::config::AppConfig;
+    use md_core::Size;
     use md_editor::Intent;
 
     fn unique(name: &str) -> std::path::PathBuf {
@@ -387,6 +390,17 @@ mod tests {
         state.edit(Intent::InsertText("x".to_owned())).unwrap();
         assert!(state.is_modified());
         assert_eq!(state.close_decision(), super::CloseDecision::PromptSave);
+    }
+
+    #[test]
+    fn sync_view_preserves_scroll_offset() {
+        let mut window = AppWindow::new(
+            AppState::new(AppConfig::default()),
+            Size::new(1000.0, 600.0),
+        );
+        window.view.scroll.offset_y = 120.0;
+        window.sync_view();
+        assert_eq!(window.view.scroll.offset_y, 120.0);
     }
 
     #[test]
