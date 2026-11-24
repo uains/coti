@@ -89,3 +89,9 @@ impl MarkdownDocument {
 pub fn parse(source: &str) -> MarkdownResult<MarkdownDocument> {
     parser::parse(source)
 }
+
+/// Serializes a standalone document model using the canonical dirty serializer.
+#[must_use]
+pub fn serialize_document(document: &Document, original_source: &str) -> String {
+    serializer::serialize(document, original_source)
+}

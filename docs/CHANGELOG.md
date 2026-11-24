@@ -1115,3 +1115,16 @@
 - **View**：`RenderView` 持有 layout/theme/scroll/blink/input，paint 不修改 Document。
 - `md-render` 12 个测试；全 Workspace 271 个测试通过。
 - **未接入**：真实 GPUI 窗口/元素/paint 适配；阶段 8 按“GPUI-ready 渲染核心”验收，平台适配与真实窗口验证留待阶段 9 装配。
+
+## 2026-11-24 · 阶段 9：`md-app` 应用核心
+
+- **9.1 应用基础**：`AppState`、`AppWindow`、`AppConfig`、最近文件、关闭决策。
+- **9.2 文件 IO**：
+  - 新建、打开 `.md`/`.markdown`、UTF-8 读取、解析。
+  - 保存/另存为；保存成功后 `mark_saved`。
+  - 原子写临时文件 + fsync + rename；Windows 替换回退。
+  - 外部文件修改检测。
+- **9.3 菜单与快捷键**：文件/编辑/格式/视图/主题/帮助菜单，命令与快捷键映射。
+- **9.4 主题与偏好**：墨/纸/高对比主题、字号/行高、TOML 子集持久化。
+- `md-app` 9 个单元测试 + 5 个应用流测试 + 2 个 smoke 测试；全 Workspace 283 个测试通过。
+- **未接入**：真实 GPUI 窗口/Element/paint；阶段 9 按“应用核心”验收，桌面壳层装配待完成。

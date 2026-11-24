@@ -15,7 +15,7 @@ Coti 的名字来自拉丁语cotidianus（每日的）。它不追求“第二�
 
 ## 开发
 
-当前完成阶段 8 的渲染核心（Paint/Shaping/Input/Resource），真实 GPUI 元素适配将在阶段 9 的 `md-app` 装配中接入。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+当前完成阶段 9 的应用核心（文件 IO、原子保存、最近文件、主题、菜单、窗口状态）；真实 GPUI 桌面壳层仍待接入。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ```powershell
 cargo run -p md-app

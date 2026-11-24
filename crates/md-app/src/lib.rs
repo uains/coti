@@ -5,7 +5,14 @@
 //! This is the only crate allowed to know about every lower layer. Business
 //! editing rules stay in [`md_editor`]; rendering stays in [`md_render`].
 
+pub mod app;
+pub mod commands;
+pub mod config;
 pub mod logging;
+
+pub use app::{AppState, AppWindow, CloseDecision, atomic_write, default_config_path};
+pub use commands::{Command, Menu, MenuItem, menus};
+pub use config::{AppConfig, ThemeKind};
 
 // Keep these declared crate boundaries linked while the module skeleton is empty.
 use md_core as _;
