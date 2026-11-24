@@ -323,6 +323,56 @@ impl InlineContent {
         remaining == 0
     }
 
+    /// Returns the previous grapheme/atom boundary before `offset`.
+    #[must_use]
+    pub fn prev_offset(&self, offset: usize) -> Option<usize> {
+        if offset == 0 || offset > self.len || !self.is_valid_offset(offset) {
+            return None;
+        }
+
+        let mut run_start = 0;
+        for run in &self.runs {
+            let run_end = run_start + run.len();
+            if offset <= run_end {
+                let local = offset - run_start;
+                return match run {
+                    Run::Text { text, .. } => text
+                        .prev_grapheme_boundary(TextOffset::new(local))
+                        .map(|previous| run_start + previous.get()),
+                    Run::Atom { .. } => Some(run_start),
+                };
+            }
+            run_start = run_end;
+        }
+
+        None
+    }
+
+    /// Returns the next grapheme/atom boundary after `offset`.
+    #[must_use]
+    pub fn next_offset(&self, offset: usize) -> Option<usize> {
+        if offset >= self.len || !self.is_valid_offset(offset) {
+            return None;
+        }
+
+        let mut run_start = 0;
+        for run in &self.runs {
+            let run_end = run_start + run.len();
+            if offset < run_end {
+                let local = offset - run_start;
+                return match run {
+                    Run::Text { text, .. } => text
+                        .next_grapheme_boundary(TextOffset::new(local))
+                        .map(|next| run_start + next.get()),
+                    Run::Atom { .. } => Some(run_end),
+                };
+            }
+            run_start = run_end;
+        }
+
+        None
+    }
+
     /// Returns the run slice.
     #[must_use]
     pub fn runs(&self) -> &[Run] {
@@ -746,5 +796,25 @@ mod tests {
         assert!(content.is_valid_offset(4));
         assert!(content.is_valid_offset(5));
         assert!(!content.is_valid_offset(6));
+    }
+
+    #[test]
+    fn prev_and_next_offsets_follow_graphemes_and_atoms() {
+        let mut content = InlineContent::from_text("a你");
+        content.push_atom(AtomKind::HardBreak, Marks::plain());
+        content.push_text("b", Marks::plain());
+
+        assert_eq!(content.next_offset(0), Some(1));
+        assert_eq!(content.next_offset(1), Some(4));
+        assert_eq!(content.next_offset(4), Some(5));
+        assert_eq!(content.next_offset(5), Some(6));
+        assert_eq!(content.next_offset(6), None);
+
+        assert_eq!(content.prev_offset(6), Some(5));
+        assert_eq!(content.prev_offset(5), Some(4));
+        assert_eq!(content.prev_offset(4), Some(1));
+        assert_eq!(content.prev_offset(1), Some(0));
+        assert_eq!(content.prev_offset(0), None);
+        assert_eq!(content.prev_offset(2), None);
     }
 }

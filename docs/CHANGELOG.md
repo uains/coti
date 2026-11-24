@@ -841,3 +841,42 @@
 ### 下一步
 
 - 阶段 4 汇总验收，更新 `IMPLEMENTATION.md`、`TESTING.md`，等待确认后进入阶段 5（`md-editor`）。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.1：Intent、Editor 状态与静态 Rule 表
+
+**状态：** 已完成；阶段 5 仍在进行中。
+
+### 变更
+
+- 新增 `Intent`、`MoveDirection`、`BlockStyle`，覆盖 InsertText、Newline、Delete、Move、Marks、BlockKind、List、Indent、Paste、Undo/Redo、IME。
+- 新增 `EditorConfig`、`Composition`、`Editor`：
+  - document、selection、pending_marks、composition、config。
+  - document/state revision。
+  - `new`、`with_selection`、`set_selection`、`dispatch` 与访问器。
+- 新增静态有序 Rule 表：
+  - `RuleId` 稳定数值。
+  - `Ctx`、`Rule { id, guard }`、`match_rule`。
+  - 当前实现 MoveLeft/MoveRight/MoveDocStart/MoveDocEnd 四条规则。
+- 新增 `DocumentIndex::prev_cursor` / `next_cursor`，处理 grapheme、Atom 和跨叶移动。
+- 新增 `InlineContent::prev_offset` / `next_offset`。
+- `md-editor` 新增 22 个测试；`md-document` 新增 2 个 cursor 测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：167 个测试通过（`md-editor` 22 个）。
+
+### 设计说明
+
+- Rule 表采用静态有序数组，guard 顺序即优先级；apply 仍由 Editor 按 RuleId 执行，等 Operation/Transaction 落地后改为统一 apply。
+- Move 只处理 Range 选择；Node/TableCells 移动返回 InvalidIntent。
+- 多选区 Move 逐项映射 head，排序后由 `SelectionSet::from_selections` 保持 primary。
+- 其他 Intent 目前尚未注册规则，返回 InvalidIntent；这是阶段 5 进行中的明确状态，不是最终能力。
+
+### 下一步
+
+- 5.2：Operation 原语与 inverse（文本/Inline/Block/Move/Split/Join）。
+- 5.3：Transaction 快照回滚、preflight、validate、ChangeSet。
+- 5.4：PositionMapping。
+- 5.5：Enter/Backspace/DeleteForward/Tab/DeleteRange 规则表与夹具。

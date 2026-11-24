@@ -3,9 +3,11 @@
 
 use std::collections::{HashMap, HashSet};
 
+use md_core::TextOffset;
+
 use crate::{
-    Affinity, BlockId, DocPos, Document, DocumentError, DocumentResult, Position, PositionError,
-    PositionResult,
+    Affinity, BlockId, BlockKind, DocPos, Document, DocumentError, DocumentResult, Position,
+    PositionError, PositionResult,
 };
 
 /// Location metadata for one block.
@@ -294,6 +296,71 @@ impl DocumentIndex {
     #[must_use]
     pub fn is_valid_doc_pos(&self, pos: DocPos) -> bool {
         pos.get() <= self.doc_length
+    }
+
+    /// Returns the previous user-level cursor position.
+    ///
+    /// Text moves by grapheme cluster, atoms by one unit, and leaf boundaries
+    /// move to the previous leaf's end.
+    #[must_use]
+    pub fn prev_cursor(&self, document: &Document, pos: DocPos) -> Option<DocPos> {
+        let hit = self.leaf_at(pos.get())?;
+        let start = self.leaf_start(hit.leaf_index)?;
+        let kind = document.kind(hit.block_id)?;
+
+        let local = match kind {
+            BlockKind::Paragraph(content)
+            | BlockKind::TableCell { content }
+            | BlockKind::Heading { content, .. } => content.prev_offset(hit.offset),
+            BlockKind::CodeBlock { text, .. }
+            | BlockKind::HtmlBlock(text)
+            | BlockKind::MathBlock(text)
+            | BlockKind::FrontMatter(text) => text
+                .prev_grapheme_boundary(TextOffset::new(hit.offset))
+                .map(|previous| previous.get()),
+            BlockKind::ThematicBreak | BlockKind::ImageBlock { .. } => {
+                (hit.offset > 0).then_some(0)
+            }
+            _ => None,
+        };
+        if let Some(local) = local {
+            return Some(DocPos::new(start + local));
+        }
+
+        let previous_index = hit.leaf_index.checked_sub(1)?;
+        let previous_start = self.leaf_start(previous_index)?;
+        let previous_len = self.leaf_len(previous_index)?;
+        Some(DocPos::new(previous_start + previous_len))
+    }
+
+    /// Returns the next user-level cursor position.
+    #[must_use]
+    pub fn next_cursor(&self, document: &Document, pos: DocPos) -> Option<DocPos> {
+        let hit = self.leaf_at(pos.get())?;
+        let start = self.leaf_start(hit.leaf_index)?;
+        let kind = document.kind(hit.block_id)?;
+
+        let local = match kind {
+            BlockKind::Paragraph(content)
+            | BlockKind::TableCell { content }
+            | BlockKind::Heading { content, .. } => content.next_offset(hit.offset),
+            BlockKind::CodeBlock { text, .. }
+            | BlockKind::HtmlBlock(text)
+            | BlockKind::MathBlock(text)
+            | BlockKind::FrontMatter(text) => text
+                .next_grapheme_boundary(TextOffset::new(hit.offset))
+                .map(|next| next.get()),
+            BlockKind::ThematicBreak | BlockKind::ImageBlock { .. } => {
+                (hit.offset == 0).then_some(1)
+            }
+            _ => None,
+        };
+        if let Some(local) = local {
+            return Some(DocPos::new(start + local));
+        }
+
+        let next_index = hit.leaf_index.checked_add(1)?;
+        self.leaf_start(next_index).map(DocPos::new)
     }
 
     /// Validates that this index matches a fresh rebuild of `document`.
@@ -724,5 +791,90 @@ mod tests {
             ),
             Err(PositionError::IllegalBoundary)
         ));
+    }
+
+    #[test]
+    fn cursor_moves_across_leaves_and_graphemes() {
+        let mut document = Document::new();
+        document.append_block(None, paragraph("a你")).unwrap();
+        document.append_block(None, paragraph("b")).unwrap();
+        let index = document.index();
+
+        assert_eq!(
+            index.next_cursor(&document, DocPos::ZERO),
+            Some(DocPos::new(1))
+        );
+        assert_eq!(
+            index.next_cursor(&document, DocPos::new(1)),
+            Some(DocPos::new(2))
+        );
+        assert_eq!(
+            index.next_cursor(&document, DocPos::new(2)),
+            Some(DocPos::new(5))
+        );
+        assert_eq!(
+            index.next_cursor(&document, DocPos::new(5)),
+            Some(DocPos::new(6))
+        );
+        assert_eq!(index.next_cursor(&document, DocPos::new(7)), None);
+
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(7)),
+            Some(DocPos::new(6))
+        );
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(6)),
+            Some(DocPos::new(5))
+        );
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(5)),
+            Some(DocPos::new(2))
+        );
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(2)),
+            Some(DocPos::new(1))
+        );
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(1)),
+            Some(DocPos::ZERO)
+        );
+        assert_eq!(index.prev_cursor(&document, DocPos::ZERO), None);
+    }
+
+    #[test]
+    fn cursor_moves_over_atoms() {
+        let mut document = Document::new();
+        let root = document.root_children()[0];
+        let mut content = InlineContent::new();
+        content.push_text("a", crate::Marks::plain());
+        content.push_atom(crate::AtomKind::HardBreak, crate::Marks::plain());
+        content.push_text("b", crate::Marks::plain());
+        document.set_inline_content(root, content).unwrap();
+        let index = document.index();
+
+        assert_eq!(
+            index.next_cursor(&document, DocPos::ZERO),
+            Some(DocPos::new(1))
+        );
+        assert_eq!(
+            index.next_cursor(&document, DocPos::new(1)),
+            Some(DocPos::new(2))
+        );
+        assert_eq!(
+            index.next_cursor(&document, DocPos::new(2)),
+            Some(DocPos::new(3))
+        );
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(3)),
+            Some(DocPos::new(2))
+        );
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(2)),
+            Some(DocPos::new(1))
+        );
+        assert_eq!(
+            index.prev_cursor(&document, DocPos::new(1)),
+            Some(DocPos::ZERO)
+        );
     }
 }

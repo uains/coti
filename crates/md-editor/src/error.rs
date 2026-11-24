@@ -1,6 +1,6 @@
 //! Error types for the headless editing kernel.
 
-use md_document::DocumentError;
+use md_document::{DocumentError, PositionError, SelectionError};
 
 /// Errors produced while dispatching intents or applying transactions.
 #[derive(Debug, thiserror::Error)]
@@ -9,6 +9,14 @@ pub enum EditorError {
     /// A document operation rejected the requested change.
     #[error("{0}")]
     Document(#[from] DocumentError),
+
+    /// A structured position could not be resolved.
+    #[error("{0}")]
+    Position(#[from] PositionError),
+
+    /// A selection is invalid.
+    #[error("{0}")]
+    Selection(#[from] SelectionError),
 
     /// A transaction was built against an outdated document revision.
     #[error("transaction based on revision {base} but document is at {current}")]
