@@ -999,3 +999,13 @@
 - `Operation` 新增 `SplitBlock`、`JoinBlocks` 及 inverse。
 - `md-editor` 52 个测试；全 Workspace 204 个测试通过。
 - 下一步：DeleteRange 跨块删除、Tab/List/Quote/Table 规则。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第五批）：跨块 DeleteRange
+
+- `Editor` 非折叠选区支持同父 Inline 叶的跨块删除：
+  - 删除首叶后缀、尾叶前缀。
+  - 移除中间叶。
+  - Join 首尾，保留左叶 ID/kind。
+- 跨容器/非 Inline 叶明确拒绝。
+- `md-editor` 53 个测试；全 Workspace 205 个测试通过。
+- 仍待实现：Tab/Shift+Tab、List/Quote/Table 专用规则、随机 Intent 属性测试。

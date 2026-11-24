@@ -198,6 +198,100 @@ impl Editor {
         })
     }
 
+    fn delete_range(&mut self, from: DocPos, to: DocPos) -> EditorResult<()> {
+        let index = self.document.index();
+        let start = index.resolve_position(&self.document, from, Affinity::Downstream)?;
+        let end = index.resolve_position(&self.document, to, Affinity::Upstream)?;
+
+        if start.block_id == end.block_id {
+            let (block_id, range) = self.primary_local_range(from, to)?;
+            let operation = Operation::ReplaceText {
+                block_id,
+                range,
+                text: String::new(),
+                marks: Marks::plain(),
+            };
+            let mut transaction = Transaction::new(self.document_revision());
+            transaction.push(operation);
+            transaction.apply(self)?;
+            self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
+            self.pending_marks = None;
+            self.state_revision += 1;
+            return Ok(());
+        }
+
+        let start_leaf =
+            index
+                .leaf_index(start.block_id)
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "range start is not a leaf".to_owned(),
+                })?;
+        let end_leaf =
+            index
+                .leaf_index(end.block_id)
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "range end is not a leaf".to_owned(),
+                })?;
+        if start_leaf >= end_leaf {
+            return Err(EditorError::InvalidIntent {
+                message: "range endpoints are not ordered".to_owned(),
+            });
+        }
+        let parent = self.document.parent(start.block_id);
+        if parent != self.document.parent(end.block_id) {
+            return Err(EditorError::InvalidIntent {
+                message: "cross-container deletion is not implemented".to_owned(),
+            });
+        }
+        let leaf_ids = index.leaf_order().to_vec();
+        let first_len = self
+            .document
+            .kind(start.block_id)
+            .and_then(BlockKind::leaf_len)
+            .ok_or_else(|| EditorError::InvalidIntent {
+                message: "range start is not a text leaf".to_owned(),
+            })?;
+        for leaf in &leaf_ids[start_leaf..=end_leaf] {
+            if self.document.parent(*leaf) != parent
+                || !matches!(
+                    self.document.kind(*leaf),
+                    Some(BlockKind::Paragraph(_) | BlockKind::Heading { .. })
+                )
+            {
+                return Err(EditorError::InvalidIntent {
+                    message: "cross-block deletion requires sibling inline leaves".to_owned(),
+                });
+            }
+        }
+
+        let mut transaction = Transaction::new(self.document_revision());
+        for leaf in &leaf_ids[start_leaf + 1..end_leaf] {
+            transaction.push(Operation::RemoveBlock { id: *leaf });
+        }
+        transaction.push(Operation::ReplaceText {
+            block_id: start.block_id,
+            range: TextRange::new(TextOffset::new(start.offset), TextOffset::new(first_len)),
+            text: String::new(),
+            marks: Marks::plain(),
+        });
+        transaction.push(Operation::ReplaceText {
+            block_id: end.block_id,
+            range: TextRange::new(TextOffset::new(0), TextOffset::new(end.offset)),
+            text: String::new(),
+            marks: Marks::plain(),
+        });
+        transaction.push(Operation::JoinBlocks {
+            left: start.block_id,
+            right: end.block_id,
+        });
+        transaction.apply(self)?;
+
+        self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(())
+    }
+
     fn delete_forward(&mut self) -> EditorResult<()> {
         let Some(selection) = self.selection.primary_selection().copied() else {
             return Err(EditorError::InvalidIntent {
@@ -220,7 +314,8 @@ impl Editor {
             };
             (selection.head.pos, next)
         } else {
-            (selection.start(), selection.end())
+            self.delete_range(selection.start(), selection.end())?;
+            return Ok(());
         };
 
         let (block_id, range) = self.primary_local_range(from, to)?;
@@ -381,7 +476,8 @@ impl Editor {
             };
             (previous, selection.head.pos)
         } else {
-            (selection.start(), selection.end())
+            self.delete_range(selection.start(), selection.end())?;
+            return Ok(());
         };
 
         let (block_id, range) = self.primary_local_range(from, to)?;
@@ -725,6 +821,22 @@ mod tests {
         let block = editor.document().root_children()[1];
         assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(3));
         assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn delete_backward_joins_across_sibling_blocks() {
+        let mut editor = editor_at(2);
+        editor
+            .set_selection(SelectionSet::new(Selection::range(
+                Anchor::new(DocPos::new(2), Affinity::Upstream),
+                Anchor::new(DocPos::new(7), Affinity::Upstream),
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert_eq!(editor.document().root_children().len(), 2);
+        let block = editor.document().root_children()[1];
+        assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(1));
+        assert_eq!(head(&editor), DocPos::new(2));
     }
 
     #[test]

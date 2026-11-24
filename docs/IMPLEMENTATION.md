@@ -1463,8 +1463,8 @@ docs/
 
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets -- -D warnings`：通过。
-- `cargo test --workspace`：204 个测试通过。
-  - `md-editor` 52 个测试。
+- `cargo test --workspace`：205 个测试通过。
+  - `md-editor` 53 个测试。
 - Move 规则覆盖：每条 RuleId 3 个以上用例；grapheme、CJK、Atom、跨叶、DocStart/DocEnd、扩展选区。
 - Operation/Transaction 测试覆盖 inverse、成功提交、空事务、陈旧 revision、操作失败/validate 失败回滚。
 
