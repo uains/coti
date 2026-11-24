@@ -47,14 +47,14 @@ fn start_window_drag(window: &Window) {
 fn start_window_drag_native() {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, HTCAPTION, SendMessageW, WM_NCLBUTTONDOWN,
+        GetForegroundWindow, HTCAPTION, PostMessageW, WM_NCLBUTTONDOWN,
     };
     unsafe {
         if let hwnd = GetForegroundWindow()
             && !hwnd.is_null()
         {
             ReleaseCapture();
-            SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
+            PostMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
         }
     }
 }
