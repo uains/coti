@@ -27,22 +27,32 @@ impl ThemeKind {
             Self::Ink => {
                 theme.background = Color(0x1B1D_22FF);
                 theme.text = Color(0xE6E8_EEFF);
+                theme.heading = Color(0xFFFF_FFFF);
                 theme.muted = Color(0x9AA3_B2FF);
                 theme.selection = Color(0x3550_7FFF);
                 theme.caret = Color(0x7FB4_FFFF);
                 theme.code_background = Color(0x2428_31FF);
+                theme.code_text = Color(0xD8DE_E9FF);
                 theme.quote_background = Color(0x2023_2AFF);
+                theme.quote_text = Color(0xB8C0_CDFF);
                 theme.border = Color(0x3A40_4DFF);
+                theme.table_header = Color(0x262A_33FF);
+                theme.accent = Color(0x7FB4_FFFF);
             }
             Self::Paper => {}
             Self::Contrast => {
                 theme.background = Color::WHITE;
                 theme.text = Color::BLACK;
+                theme.heading = Color::BLACK;
                 theme.selection = Color(0xFFE0_00FF);
                 theme.caret = Color::BLACK;
                 theme.code_background = Color(0xF0F0_00FF);
+                theme.code_text = Color::BLACK;
                 theme.quote_background = Color(0xE8E8_E8FF);
+                theme.quote_text = Color::BLACK;
                 theme.border = Color::BLACK;
+                theme.table_header = Color(0xE0E0_E0FF);
+                theme.accent = Color::BLACK;
             }
         }
         theme
@@ -66,6 +76,16 @@ impl ThemeKind {
             "paper" => Some(Self::Paper),
             "contrast" => Some(Self::Contrast),
             _ => None,
+        }
+    }
+
+    /// Cycles to the next built-in theme.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Ink => Self::Paper,
+            Self::Paper => Self::Contrast,
+            Self::Contrast => Self::Ink,
         }
     }
 }

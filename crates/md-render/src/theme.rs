@@ -22,6 +22,8 @@ pub struct Theme {
     pub background: Color,
     /// Body text.
     pub text: Color,
+    /// Heading text.
+    pub heading: Color,
     /// Muted text.
     pub muted: Color,
     /// Selection fill.
@@ -30,10 +32,18 @@ pub struct Theme {
     pub caret: Color,
     /// Code block background.
     pub code_background: Color,
+    /// Code block text.
+    pub code_text: Color,
     /// Quote background.
     pub quote_background: Color,
+    /// Quote text.
+    pub quote_text: Color,
     /// Table border.
     pub border: Color,
+    /// Table header background.
+    pub table_header: Color,
+    /// Accent color for quote bars and list markers.
+    pub accent: Color,
     /// Body font size.
     pub font_size: f32,
     /// Body line height.
@@ -47,12 +57,17 @@ impl Default for Theme {
         Self {
             background: Color(0xFFFF_FFFF),
             text: Color(0x2021_24FF),
+            heading: Color(0x1416_1AFF),
             muted: Color(0x6B72_80FF),
             selection: Color(0xBFD7_FFFF),
             caret: Color(0x1A73_E8FF),
             code_background: Color(0xF5F6_FAFF),
+            code_text: Color(0x2A2D_33FF),
             quote_background: Color(0xF8F9_FCFF),
+            quote_text: Color(0x5057_63FF),
             border: Color(0xD9DD_E5FF),
+            table_header: Color(0xF1F3_F7FF),
+            accent: Color(0x1A73_E8FF),
             font_size: 14.0,
             line_height: 20.0,
             caret_width: 2.0,
@@ -101,6 +116,8 @@ pub enum PaintCommand {
         color: Color,
         /// Font size.
         font_size: f32,
+        /// Font weight.
+        font_weight: f32,
     },
     /// Draw an image.
     Image {

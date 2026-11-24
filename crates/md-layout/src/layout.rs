@@ -358,6 +358,8 @@ impl<'a> LayoutEngine<'a> {
                     .copied()
                     .unwrap_or(1.1);
                 let font = env.style.font_size * scale;
+                let mut measure = MeasureStyle::new(font, font * 1.3);
+                measure.weight = if *level <= 2 { 600.0 } else { 500.0 };
                 self.layout_inline_leaf(
                     id,
                     kind.clone(),
@@ -365,7 +367,7 @@ impl<'a> LayoutEngine<'a> {
                     LayoutKind::Heading(*level),
                     origin,
                     width,
-                    MeasureStyle::new(font, font * 1.3),
+                    measure,
                 )
             }
             BlockKind::TableCell { content } => self.layout_inline_leaf(
@@ -526,7 +528,17 @@ impl<'a> LayoutEngine<'a> {
     ) -> BlockLayout {
         let style = MeasureStyle::new(env.style.code_font_size, env.style.code_font_size * 1.5);
         let padding = env.style.code_padding;
-        let content = md_document::InlineContent::from_text(text);
+        let mut content = md_document::InlineContent::new();
+        for (index, line) in text.split('\n').enumerate() {
+            if index > 0 {
+                let _ = content.insert_atom_at(
+                    content.len(),
+                    md_document::AtomKind::HardBreak,
+                    md_document::Marks::plain(),
+                );
+            }
+            content.append_content(&md_document::InlineContent::from_text(line));
+        }
         let layout = layout_inline(
             &content,
             &style,

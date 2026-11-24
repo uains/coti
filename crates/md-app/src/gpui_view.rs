@@ -1,11 +1,11 @@
 //! Real GPUI view with a custom `Element` renderer.
 
 use gpui::{
-    App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle, GlobalElementId,
-    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
-    MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, ScrollDelta, ScrollEvent,
-    SharedString, Style, Styled, TextAlign, TextRun, Window, WindowBounds, WindowOptions,
-    WindowTextSystem, div, fill, point, px, relative, rgba, size,
+    App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle, FontWeight,
+    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
+    MouseButton, MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, ScrollDelta,
+    ScrollEvent, SharedString, Style, Styled, TextAlign, TextRun, Window, WindowBounds,
+    WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size,
 };
 use gpui_platform::application;
 use md_core::Size;
@@ -122,6 +122,13 @@ impl CotiView {
     fn on_key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        if modifiers.control && modifiers.shift && key.eq_ignore_ascii_case("t") {
+            let next = self.window.state.config().theme.next();
+            self.window.state.config_mut().theme = next;
+            self.window.sync_view();
+            cx.notify();
+            return;
+        }
         if modifiers.control && key.eq_ignore_ascii_case("o") {
             self.open_dialog();
             cx.notify();
@@ -327,10 +334,13 @@ impl Element for DocumentElement {
                     text,
                     color,
                     font_size,
+                    font_weight,
                 } => {
+                    let mut font = text_style.font();
+                    font.weight = FontWeight(font_weight);
                     let run = TextRun {
                         len: text.len(),
-                        font: text_style.font(),
+                        font,
                         color: text_color(color),
                         background_color: None,
                         underline: None,
@@ -408,10 +418,12 @@ struct SysMeasurer<'a> {
 }
 
 impl SysMeasurer<'_> {
-    fn run(&self, len: usize) -> TextRun {
+    fn run(&self, len: usize, weight: f32) -> TextRun {
+        let mut font = self.font.clone();
+        font.weight = FontWeight(weight);
         TextRun {
             len,
-            font: self.font.clone(),
+            font,
             color: gpui::black(),
             background_color: None,
             underline: None,
@@ -425,7 +437,14 @@ impl TextMeasurer for SysMeasurer<'_> {
         if text.is_empty() {
             return 0.0;
         }
-        let run = self.run(text.len());
+        if text.contains(['\n', '\r']) {
+            return self
+                .sys
+                .layout_line(" ", px(style.font_size), &[self.run(1, style.weight)], None)
+                .width
+                .into();
+        }
+        let run = self.run(text.len(), style.weight);
         f32::from(
             self.sys
                 .layout_line(text, px(style.font_size), &[run], None)
@@ -443,7 +462,7 @@ impl TextMeasurer for SysMeasurer<'_> {
     }
 
     fn line_metrics(&self, style: &MeasureStyle) -> LineMetrics {
-        let run = self.run(1);
+        let run = self.run(1, style.weight);
         let layout = self.sys.layout_line("x", px(style.font_size), &[run], None);
         LineMetrics::new(
             f32::from(layout.ascent),

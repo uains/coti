@@ -62,6 +62,8 @@ pub struct MeasureStyle {
     pub line_height: f32,
     /// Extra letter spacing.
     pub letter_spacing: f32,
+    /// Font weight.
+    pub weight: f32,
 }
 
 impl MeasureStyle {
@@ -72,6 +74,7 @@ impl MeasureStyle {
             font_size,
             line_height,
             letter_spacing: 0.0,
+            weight: 400.0,
         }
     }
 }

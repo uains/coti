@@ -1201,3 +1201,12 @@
 - 页面增加 24px padding、760px 最大版心并居中。
 - 自定义 Element 仍负责最终绘制；布局缓存按 document revision + viewport width 失效。
 - 291 个测试通过；clippy/分层检查通过。
+
+## 2026-11-24 · 主题与排版调整
+
+- 主题语义扩展：heading/code_text/quote_text/table_header/accent。
+- PaintPlan 新增引用条、代码块边框、表格表头/网格、列表项目符号/序号。
+- 标题使用 600/500 字重；`MeasureStyle.weight` → `Line.font_weight` → GPUI `FontWeight`。
+- 墨/纸/高对比三主题补齐语义色；Ctrl+Shift+T 循环主题。
+- 修复代码块换行：按行构造成 HardBreak，避免 GPUI `layout_line` 收到换行符崩溃。
+- 291 个测试通过；实际窗口截图验证标题/引用/列表/代码块主题。

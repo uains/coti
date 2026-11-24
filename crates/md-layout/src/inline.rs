@@ -39,6 +39,8 @@ pub struct Line {
     pub baseline: f32,
     /// Font size used for this line.
     pub font_size: f32,
+    /// Font weight used for this line.
+    pub font_weight: f32,
 }
 
 impl Line {
@@ -179,6 +181,7 @@ pub fn layout_inline(
                 lines.len(),
                 &metrics,
                 style.font_size,
+                style.weight,
             ));
             current_width = 0.0;
             continue;
@@ -196,6 +199,7 @@ pub fn layout_inline(
                     lines.len(),
                     &metrics,
                     style.font_size,
+                    style.weight,
                 ));
                 current = remainder;
             } else {
@@ -205,6 +209,7 @@ pub fn layout_inline(
                     lines.len(),
                     &metrics,
                     style.font_size,
+                    style.weight,
                 ));
                 current_width = 0.0;
             }
@@ -219,6 +224,7 @@ pub fn layout_inline(
             lines.len(),
             &metrics,
             style.font_size,
+            style.weight,
         ));
     }
 
@@ -232,6 +238,7 @@ fn make_line(
     index: usize,
     metrics: &crate::measure::LineMetrics,
     font_size: f32,
+    font_weight: f32,
 ) -> Line {
     let start = clusters.first().map_or(0, |cluster| cluster.start);
     let end = clusters.last().map_or(start, |cluster| cluster.end);
@@ -244,6 +251,7 @@ fn make_line(
         end,
         baseline: top + metrics.ascent,
         font_size,
+        font_weight,
     }
 }
 

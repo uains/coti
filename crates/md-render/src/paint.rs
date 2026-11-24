@@ -21,6 +21,10 @@ pub fn build_paint_plan(
         paint_block_backgrounds(block, &mut plan, theme);
     }
 
+    for block in &layout.blocks {
+        paint_block_decorations(block, &mut plan, theme);
+    }
+
     for rect in layout.selection_rects(selection) {
         plan.push(
             PaintLayer::Selection,
@@ -32,7 +36,7 @@ pub fn build_paint_plan(
     }
 
     for block in &layout.blocks {
-        paint_text(block, &mut plan, theme);
+        paint_text(block, &mut plan, theme, None);
     }
 
     for block in &layout.blocks {
@@ -77,7 +81,15 @@ fn paint_block_backgrounds(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
     }
 }
 
-fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme) {
+fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherited: Option<Color>) {
+    let color = inherited.unwrap_or(match block.kind {
+        LayoutKind::Heading(_) => theme.heading,
+        LayoutKind::CodeBlock | LayoutKind::Html | LayoutKind::Math | LayoutKind::FrontMatter => {
+            theme.code_text
+        }
+        LayoutKind::Quote | LayoutKind::Footnote => theme.quote_text,
+        _ => theme.text,
+    });
     for line in &block.lines {
         let text: String = line
             .clusters
@@ -98,13 +110,151 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme) {
                     line.rect.height(),
                 ),
                 text,
-                color: theme.text,
+                color,
                 font_size: line.font_size,
+                font_weight: line.font_weight,
             },
         );
     }
+    let child_inherited = match block.kind {
+        LayoutKind::Quote | LayoutKind::Footnote => Some(theme.quote_text),
+        _ => inherited,
+    };
     for child in &block.children {
-        paint_text(child, plan, theme);
+        paint_text(child, plan, theme, child_inherited);
+    }
+}
+
+fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme) {
+    match block.kind {
+        LayoutKind::Quote | LayoutKind::Footnote => {
+            plan.push(
+                PaintLayer::Decorations,
+                PaintCommand::FillRect {
+                    rect: Rect::new(
+                        block.rect.left() + 2.0,
+                        block.rect.top() + 4.0,
+                        3.0,
+                        (block.rect.height() - 8.0).max(1.0),
+                    ),
+                    color: theme.accent,
+                },
+            );
+        }
+        LayoutKind::CodeBlock | LayoutKind::Html | LayoutKind::Math | LayoutKind::FrontMatter => {
+            let thickness = 1.0;
+            for rect in [
+                Rect::new(
+                    block.rect.left(),
+                    block.rect.top(),
+                    block.rect.width(),
+                    thickness,
+                ),
+                Rect::new(
+                    block.rect.left(),
+                    block.rect.bottom() - thickness,
+                    block.rect.width(),
+                    thickness,
+                ),
+                Rect::new(
+                    block.rect.left(),
+                    block.rect.top(),
+                    thickness,
+                    block.rect.height(),
+                ),
+                Rect::new(
+                    block.rect.right() - thickness,
+                    block.rect.top(),
+                    thickness,
+                    block.rect.height(),
+                ),
+            ] {
+                plan.push(
+                    PaintLayer::Decorations,
+                    PaintCommand::FillRect {
+                        rect,
+                        color: theme.border,
+                    },
+                );
+            }
+        }
+        LayoutKind::Table => {
+            for (row_index, row) in block.children.iter().enumerate() {
+                if row_index == 0 {
+                    plan.push(
+                        PaintLayer::Decorations,
+                        PaintCommand::FillRect {
+                            rect: row.rect,
+                            color: theme.table_header,
+                        },
+                    );
+                }
+                plan.push(
+                    PaintLayer::Decorations,
+                    PaintCommand::FillRect {
+                        rect: Rect::new(
+                            row.rect.left(),
+                            row.rect.bottom() - 1.0,
+                            row.rect.width(),
+                            1.0,
+                        ),
+                        color: theme.border,
+                    },
+                );
+                for cell in &row.children {
+                    plan.push(
+                        PaintLayer::Decorations,
+                        PaintCommand::FillRect {
+                            rect: Rect::new(
+                                cell.rect.right() - 1.0,
+                                cell.rect.top(),
+                                1.0,
+                                cell.rect.height(),
+                            ),
+                            color: theme.border,
+                        },
+                    );
+                }
+            }
+        }
+        LayoutKind::List { ordered } => {
+            for (index, item) in block.children.iter().enumerate() {
+                if ordered {
+                    plan.push(
+                        PaintLayer::Decorations,
+                        PaintCommand::Text {
+                            rect: Rect::new(
+                                item.rect.left() - 26.0,
+                                item.rect.top(),
+                                24.0,
+                                theme.line_height,
+                            ),
+                            text: format!("{}.", index + 1),
+                            color: theme.accent,
+                            font_size: theme.font_size,
+                            font_weight: 400.0,
+                        },
+                    );
+                } else {
+                    plan.push(
+                        PaintLayer::Decorations,
+                        PaintCommand::FillRect {
+                            rect: Rect::new(
+                                item.rect.left() - 14.0,
+                                item.rect.top() + theme.line_height * 0.55,
+                                4.0,
+                                4.0,
+                            ),
+                            color: theme.accent,
+                        },
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+    for child in &block.children {
+        paint_block_decorations(child, plan, theme);
     }
 }
 
