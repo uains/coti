@@ -689,6 +689,67 @@ impl Editor {
         Ok(())
     }
 
+    fn exit_empty_list_item(&mut self, block_id: md_document::BlockId) -> EditorResult<bool> {
+        let Some(item) = self.document.parent(block_id) else {
+            return Ok(false);
+        };
+        if !matches!(self.document.kind(item), Some(BlockKind::ListItem { .. }))
+            || self
+                .document
+                .children(item)
+                .is_none_or(|children| children.len() != 1)
+        {
+            return Ok(false);
+        }
+        if self
+            .document
+            .kind(block_id)
+            .and_then(BlockKind::inline_content)
+            .is_none_or(|content| !content.plain_text().is_empty())
+        {
+            return Ok(false);
+        }
+        let Some(list) = self.document.parent(item) else {
+            return Ok(false);
+        };
+        let Some(items) = self.document.children(list) else {
+            return Ok(false);
+        };
+        let index = self.document.index();
+        let leaves: Vec<_> = index
+            .leaf_order()
+            .iter()
+            .filter(|leaf| self.document.is_ancestor(list, **leaf))
+            .copied()
+            .collect();
+        let target = if items.len() > 1 {
+            leaves
+                .last()
+                .and_then(|leaf| index.leaf_index(*leaf))
+                .and_then(|leaf| {
+                    index
+                        .leaf_start(leaf)
+                        .zip(index.leaf_len(leaf))
+                        .map(|(start, len)| DocPos::new(start + len))
+                })
+        } else {
+            leaves
+                .first()
+                .and_then(|leaf| index.leaf_index(*leaf))
+                .and_then(|leaf| index.leaf_start(leaf).map(DocPos::new))
+        };
+        let target = target.unwrap_or(DocPos::ZERO);
+
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::ExitListItem { id: item });
+        self.commit(transaction)?;
+        let pos = DocPos::new(target.get().min(self.document.index().doc_length()));
+        self.selection = SelectionSet::new(Selection::collapsed(pos, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(true)
+    }
+
     fn unlist_first_list_item(&mut self, block_id: md_document::BlockId) -> EditorResult<bool> {
         let Some(item) = self.document.parent(block_id) else {
             return Ok(false);
@@ -1184,6 +1245,14 @@ impl Editor {
                 .ok_or_else(|| EditorError::InvalidIntent {
                     message: "enter target is stale".to_owned(),
                 })?;
+
+        if kind
+            .inline_content()
+            .is_some_and(|content| content.plain_text().is_empty())
+            && self.exit_empty_list_item(block_id)?
+        {
+            return Ok(());
+        }
 
         if let BlockKind::TableCell { content } = kind {
             let mut content = content;
@@ -2393,6 +2462,28 @@ mod tests {
         editor.dispatch(Intent::DeleteBackward).unwrap();
         editor.dispatch(Intent::DeleteBackward).unwrap();
         assert_eq!(editor.document().root_children().len(), 1);
+        assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn enter_on_empty_list_item_exits_list() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(parsed.document().index().doc_length()),
+            Affinity::Upstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        assert_eq!(editor.document().root_children().len(), 2);
+        let list = editor.document().root_children()[0];
+        assert_eq!(editor.document().children(list).unwrap().len(), 2);
+        let paragraph = editor.document().root_children()[1];
+        assert_eq!(
+            editor.document().kind(paragraph).unwrap().leaf_len(),
+            Some(0)
+        );
         assert!(editor.document().validate().is_ok());
     }
 

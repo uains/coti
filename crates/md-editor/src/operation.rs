@@ -51,6 +51,11 @@ pub enum Operation {
         /// Paragraph content for the new item.
         content: InlineContent,
     },
+    /// Exits a list from an empty item, inserting a paragraph after the list.
+    ExitListItem {
+        /// Empty list item.
+        id: BlockId,
+    },
     /// Unlists the first item of a list into a paragraph.
     UnlistListItem {
         /// First list item.
@@ -214,6 +219,44 @@ impl Operation {
                 Ok(AppliedOperation {
                     inverse: Self::RemoveBlock { id: item },
                     affected: vec![item, para],
+                })
+            }
+            Self::ExitListItem { id } => {
+                let list = document.parent(*id).ok_or_else(|| stale(*id))?;
+                let container = document.parent(list);
+                let list_index = if let Some(container) = container {
+                    document
+                        .children(container)
+                        .and_then(|children| children.iter().position(|child| *child == list))
+                } else {
+                    document
+                        .root_children()
+                        .iter()
+                        .position(|child| *child == list)
+                }
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "list is not linked from its parent".to_owned(),
+                })?;
+
+                document.remove_block(*id)?;
+                let list_empty = document
+                    .children(list)
+                    .is_none_or(|children| children.is_empty());
+                if list_empty {
+                    document.remove_block(list)?;
+                }
+                let paragraph = document.insert_block(
+                    container,
+                    if list_empty {
+                        list_index
+                    } else {
+                        list_index + 1
+                    },
+                    BlockKind::Paragraph(InlineContent::new()),
+                )?;
+                Ok(AppliedOperation {
+                    inverse: Self::RemoveBlock { id: paragraph },
+                    affected: vec![paragraph],
                 })
             }
             Self::UnlistListItem { id } => {
