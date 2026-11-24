@@ -1543,3 +1543,12 @@
 - 飞书主题：引用背景 `#F7F8FA`，行内代码背景 `#EFF0F2`，明显区分。
 - Ink 使用深色 inline code 背景，Contrast 使用 `#E8E8E8`。
 - 322 个测试通过。
+
+## 2026-11-24 · 接入绘制视口裁剪（虚拟渲染第一层）
+
+- DocumentElement prepaint 只处理“当前视口 ± 一屏”内的绘制命令。
+- 离屏 Text 不再调用 `shape_line`；离屏图片不加载；离屏背景/网格线不生成 PreparedItem。
+- 视口范围按 `scroll.offset_y` 与内容 viewport 高度计算，上下各预取一屏。
+- IME 预编辑文本也按视口裁剪。
+- 布局仍保留完整文档几何，属于 paint 级虚拟渲染，不是分块窗口布局。
+- 322 个测试通过。

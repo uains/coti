@@ -1673,7 +1673,22 @@ impl Element for DocumentElement {
         )));
         let composing = view.window.state.editor().composition().is_some();
         let editor_active = view.editor_active;
+        let viewport_height = view.window.viewport.height.max(1.0);
+        let paint_top = scroll - viewport_height;
+        let paint_bottom = scroll + viewport_height * 2.0;
+        let visible =
+            |rect: md_core::Rect| rect.bottom() >= paint_top && rect.top() <= paint_bottom;
         for item in plan.items {
+            let command_rect = match &item.command {
+                PaintCommand::FillRect { rect, .. }
+                | PaintCommand::RoundRect { rect, .. }
+                | PaintCommand::Caret { rect, .. }
+                | PaintCommand::Image { rect, .. }
+                | PaintCommand::Text { rect, .. } => *rect,
+            };
+            if !visible(command_rect) {
+                continue;
+            }
             match item.command {
                 PaintCommand::FillRect { rect, color } => {
                     items.push(PreparedItem::Quad(fill(
@@ -1763,6 +1778,8 @@ impl Element for DocumentElement {
             && !text.is_empty()
             && let Some(selection) = view.window.state.editor().selection().primary_selection()
             && let Some(caret) = view.window.view.layout.caret_rect(selection.head.pos)
+            && caret.top() >= paint_top
+            && caret.top() <= paint_bottom
         {
             let text_len = text.len();
             let run = TextRun {
