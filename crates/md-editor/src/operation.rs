@@ -97,6 +97,16 @@ pub enum Operation {
         /// Target row.
         row: BlockId,
     },
+    /// Moves a block out of its parent quote.
+    OutdentQuoteBlock {
+        /// Block to move out.
+        id: BlockId,
+    },
+    /// Wraps a block in a new quote.
+    IndentBlockIntoQuote {
+        /// Block to wrap.
+        id: BlockId,
+    },
 }
 
 /// Result of applying an operation.
@@ -258,6 +268,20 @@ impl Operation {
                 Ok(AppliedOperation {
                     inverse: Self::AppendTableRow { table },
                     affected: vec![table, *row],
+                })
+            }
+            Self::OutdentQuoteBlock { id } => {
+                outdent_quote_block(document, *id)?;
+                Ok(AppliedOperation {
+                    inverse: Self::IndentBlockIntoQuote { id: *id },
+                    affected: vec![*id],
+                })
+            }
+            Self::IndentBlockIntoQuote { id } => {
+                indent_block_into_quote(document, *id)?;
+                Ok(AppliedOperation {
+                    inverse: Self::OutdentQuoteBlock { id: *id },
+                    affected: vec![*id],
                 })
             }
         }
@@ -487,6 +511,55 @@ fn remove_table_row_inner(document: &mut Document, row: BlockId) -> EditorResult
     }
     document.remove_block(row)?;
     Ok(table)
+}
+
+fn outdent_quote_block(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    let snapshot = document.snapshot();
+    let result = outdent_quote_block_inner(document, id);
+    if result.is_err() {
+        document.restore(snapshot);
+    }
+    result
+}
+
+fn outdent_quote_block_inner(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    let quote = document
+        .parent(id)
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "block has no parent quote".to_owned(),
+        })?;
+    if !matches!(document.kind(quote), Some(BlockKind::Quote(_))) {
+        return Err(EditorError::InvalidIntent {
+            message: "block parent is not a quote".to_owned(),
+        });
+    }
+    let parent = document.parent(quote);
+    let index = child_index(document, parent, quote)?;
+    document.move_block_allow_empty(id, parent, index)?;
+    if document
+        .children(quote)
+        .is_some_and(|children| children.is_empty())
+    {
+        document.remove_block(quote)?;
+    }
+    Ok(())
+}
+
+fn indent_block_into_quote(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    let snapshot = document.snapshot();
+    let result = indent_block_into_quote_inner(document, id);
+    if result.is_err() {
+        document.restore(snapshot);
+    }
+    result
+}
+
+fn indent_block_into_quote_inner(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    let parent = document.parent(id);
+    let index = child_index(document, parent, id)?;
+    let quote = document.insert_block(parent, index, BlockKind::Quote(vec![]))?;
+    document.move_block(id, Some(quote), 0)?;
+    Ok(())
 }
 
 fn apply_replace_text(
@@ -965,5 +1038,45 @@ mod tests {
                 .apply(&mut document)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn outdent_quote_block_moves_child_before_quote() {
+        let mut document = Document::new();
+        let quote = document
+            .insert_block(None, 0, BlockKind::Quote(vec![]))
+            .unwrap();
+        let child = document
+            .append_block(Some(quote), paragraph("quoted"))
+            .unwrap();
+        let applied = Operation::OutdentQuoteBlock { id: child }
+            .apply(&mut document)
+            .unwrap();
+        assert!(document.validate().is_ok());
+        assert!(document.node(quote).is_none());
+        assert_eq!(document.root_children()[0], child);
+        applied.inverse.apply(&mut document).unwrap();
+        assert!(document.validate().is_ok());
+        assert!(document.parent(child).is_some());
+    }
+
+    #[test]
+    fn outdent_keeps_quote_when_other_children_remain() {
+        let mut document = Document::new();
+        let quote = document
+            .insert_block(None, 0, BlockKind::Quote(vec![]))
+            .unwrap();
+        let first = document
+            .append_block(Some(quote), paragraph("one"))
+            .unwrap();
+        document
+            .append_block(Some(quote), paragraph("two"))
+            .unwrap();
+        Operation::OutdentQuoteBlock { id: first }
+            .apply(&mut document)
+            .unwrap();
+        assert!(document.node(quote).is_some());
+        assert_eq!(document.children(quote).unwrap().len(), 1);
+        assert!(document.validate().is_ok());
     }
 }

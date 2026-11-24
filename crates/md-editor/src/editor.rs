@@ -678,6 +678,45 @@ impl Editor {
                 return Ok(());
             }
 
+            if resolved.offset == 0
+                && let Some((_, 0)) = self.quote_context(resolved.block_id)
+            {
+                let mut transaction = Transaction::new(self.document_revision());
+                transaction.push(Operation::OutdentQuoteBlock {
+                    id: resolved.block_id,
+                });
+                transaction.apply(self)?;
+
+                let index = self.document.index();
+                let leaf = index
+                    .leaf_order()
+                    .iter()
+                    .find(|leaf| {
+                        **leaf == resolved.block_id
+                            || self.document.is_ancestor(resolved.block_id, **leaf)
+                    })
+                    .copied()
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "quote child has no editable leaf".to_owned(),
+                    })?;
+                let leaf_index =
+                    index
+                        .leaf_index(leaf)
+                        .ok_or_else(|| EditorError::InvalidIntent {
+                            message: "quote child leaf has no index".to_owned(),
+                        })?;
+                let pos = index
+                    .leaf_start(leaf_index)
+                    .map(DocPos::new)
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "quote child leaf has no position".to_owned(),
+                    })?;
+                self.selection = SelectionSet::new(Selection::collapsed(pos, Affinity::Downstream));
+                self.pending_marks = None;
+                self.state_revision += 1;
+                return Ok(());
+            }
+
             let Some(previous) = index.prev_cursor(&self.document, selection.head.pos) else {
                 return Ok(());
             };
@@ -702,6 +741,19 @@ impl Editor {
         self.pending_marks = None;
         self.state_revision += 1;
         Ok(())
+    }
+
+    fn quote_context(&self, block: md_document::BlockId) -> Option<(md_document::BlockId, usize)> {
+        let quote = self.document.parent(block)?;
+        if !matches!(self.document.kind(quote), Some(BlockKind::Quote(_))) {
+            return None;
+        }
+        let index = self
+            .document
+            .children(quote)?
+            .iter()
+            .position(|child| *child == block)?;
+        Some((quote, index))
     }
 
     fn table_cell_context(
@@ -1436,5 +1488,69 @@ mod tests {
         let leaf_index = index.leaf_index(previous_cell).unwrap();
         let expected = index.leaf_start(leaf_index).unwrap() + index.leaf_len(leaf_index).unwrap();
         assert_eq!(head(&editor), DocPos::new(expected));
+    }
+
+    fn quote_editor(children: &[&str]) -> (Editor, md_document::BlockId) {
+        let mut document = Document::new();
+        let quote = document
+            .insert_block(None, 0, BlockKind::Quote(vec![]))
+            .unwrap();
+        for text in children {
+            document
+                .append_block(
+                    Some(quote),
+                    BlockKind::Paragraph(InlineContent::from_text(*text)),
+                )
+                .unwrap();
+        }
+        let editor = Editor::new(document);
+        (editor, quote)
+    }
+
+    #[test]
+    fn backspace_at_first_quote_child_moves_it_out() {
+        let (mut editor, quote) = quote_editor(&["ab", "cd"]);
+        editor
+            .set_selection(SelectionSet::new(Selection::collapsed(
+                DocPos::ZERO,
+                Affinity::Downstream,
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert!(editor.document().node(quote).is_some());
+        assert_eq!(editor.document().children(quote).unwrap().len(), 1);
+        assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn backspace_at_only_quote_child_removes_quote() {
+        let (mut editor, quote) = quote_editor(&["ab"]);
+        editor
+            .set_selection(SelectionSet::new(Selection::collapsed(
+                DocPos::ZERO,
+                Affinity::Downstream,
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert!(editor.document().node(quote).is_none());
+        assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn backspace_at_second_quote_child_does_not_exit_quote() {
+        let (mut editor, quote) = quote_editor(&["ab", "cd"]);
+        let second = editor.document().children(quote).unwrap()[1];
+        let index = editor.document().index();
+        let leaf_index = index.leaf_index(second).unwrap();
+        let pos = index.leaf_start(leaf_index).unwrap();
+        editor
+            .set_selection(SelectionSet::new(Selection::collapsed(
+                DocPos::new(pos),
+                Affinity::Downstream,
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert!(editor.document().node(quote).is_some());
+        assert_eq!(editor.document().children(quote).unwrap().len(), 2);
     }
 }

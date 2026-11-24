@@ -1054,3 +1054,21 @@
 - 光标在 TableCell 起点时回退到前一格末尾。
 - 跨行回退到上一行末格；首格 Backspace 为 no-op。
 - 新增 3 个测试；`md-editor` 69 个测试；全 Workspace 221 个测试通过。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第十二批）～5.6：Quote Backspace 与随机 Intent 属性测试
+
+- 新增 `Operation::OutdentQuoteBlock` / `IndentBlockIntoQuote`。
+- Quote 首子块 Backspace 移出 Quote；唯一子块移出后删除空 Quote；非首子块保持 Quote。
+- 新增 `crates/md-editor/tests/editor_properties.rs`：
+  - 随机 InsertText/DeleteBackward 后 Document 始终 valid。
+  - Enter + InsertText 序列 valid。
+  - 陈旧 Transaction 不修改文档。
+  - 随机光标位置后 Selection 仍合法。
+- `md-editor` 74 个单元测试 + 4 个属性测试；全 Workspace 230 个测试通过。
+
+## 2026-11-24 · 阶段 5 汇总：Headless 编辑核心完成
+
+- 阶段 5 核心闭环完成：Intent → Rule → Operation → Transaction → Document/Selection 更新。
+- 已实现规则：Move、InsertText、DeleteBackward/Forward、Enter、DeleteRange、ChangeIndent（代码块/列表/表格）、TableCell 导航与追加行、Quote Backspace。
+- 已知缺口：完整 DESIGN §8 规则表、Node/TableCells 删除、Split/Join PositionMapping、History（阶段 6）、根级 ListItem 退出列表。
+- 阶段 5 按“核心范围”验收；完整规则覆盖作为后续增量。

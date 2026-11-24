@@ -1439,7 +1439,7 @@ docs/
 
 ### 阶段 5：`md-editor` 编辑内核（进行中）
 
-**当前进度：** 5.1～5.3 完成，5.4 基础完成，5.5 部分完成；阶段 5 未完成。
+**当前进度：** 阶段 5 核心范围完成（5.1～5.6），完整 DESIGN §8 规则覆盖列为后续增量。
 
 | 步骤 | 状态 | 产物 |
 |---|---|---|
@@ -1463,8 +1463,8 @@ docs/
 
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets -- -D warnings`：通过。
-- `cargo test --workspace`：221 个测试通过。
-  - `md-editor` 69 个测试。
+- `cargo test --workspace`：230 个测试通过。
+  - `md-editor` 74 个单元测试 + 4 个属性测试。
 - Move 规则覆盖：每条 RuleId 3 个以上用例；grapheme、CJK、Atom、跨叶、DocStart/DocEnd、扩展选区。
 - Operation/Transaction 测试覆盖 inverse、成功提交、空事务、陈旧 revision、操作失败/validate 失败回滚。
 
