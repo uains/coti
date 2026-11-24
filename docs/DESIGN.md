@@ -15,7 +15,7 @@
 
 | 领域        | 最终方案                                | 主要目的                               |
 | ----------- | --------------------------------------- | -------------------------------------- |
-| Block 存储  | Block Arena + Generation 化 BlockId     | 稳定节点身份、支持结构编辑和安全回收   |
+| Block 存储  | Block `Arena` + Generation 化 BlockId   | 稳定节点身份、支持结构编辑和安全回收   |
 | Inline 存储 | Flat Run + Marks + Atom                 | 高效处理连续文本、格式范围和原子内容   |
 | 全文位置    | DocPos 唯一权威线性坐标                 | 统一编辑、选区、IME、搜索和布局位置    |
 | 编辑执行    | Intent → Rule → Operation → Transaction | 使编辑行为可测试、可撤销且具备原子性   |

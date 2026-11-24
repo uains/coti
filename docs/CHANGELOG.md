@@ -1529,3 +1529,10 @@
 - 同一行按 marks 分组绘制，避免样式互相污染。
 - 新增 inline code 样式测试。
 - 322 个测试通过。
+
+## 2026-11-24 · 行内代码圆角背景
+
+- 行内代码背景改为 `RoundRect`：圆角 4px。
+- 水平左右各 4px padding，垂直上下各 2px padding。
+- 圆角矩形通过 GPUI `PaintQuad::corner_radii` 实际绘制。
+- 322 个测试通过。

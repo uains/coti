@@ -1681,6 +1681,16 @@ impl Element for DocumentElement {
                         rgba(color.0),
                     )));
                 }
+                PaintCommand::RoundRect {
+                    rect,
+                    color,
+                    radius,
+                } => {
+                    items.push(PreparedItem::Quad(
+                        fill(paint_bounds(bounds, rect, scroll), rgba(color.0))
+                            .corner_radii(px(radius)),
+                    ));
+                }
                 PaintCommand::Caret { rect, color } => {
                     if !composing && editor_active && view.caret_visible {
                         items.push(PreparedItem::Quad(fill(

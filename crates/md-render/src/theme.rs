@@ -140,6 +140,15 @@ pub enum PaintCommand {
         /// Source URL/path.
         source: String,
     },
+    /// Fill a rounded rectangle.
+    RoundRect {
+        /// Target rectangle.
+        rect: Rect,
+        /// Fill color.
+        color: Color,
+        /// Corner radius.
+        radius: f32,
+    },
     /// Draw the caret.
     Caret {
         /// Caret rectangle.

@@ -109,14 +109,16 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
             if is_code {
                 plan.push(
                     PaintLayer::Decorations,
-                    PaintCommand::FillRect {
+                    PaintCommand::RoundRect {
                         rect: Rect::new(
-                            start_x - 2.0,
-                            line.rect.top() + 1.0,
-                            (end_x - start_x).max(1.0) + 4.0,
-                            (line.rect.height() - 2.0).max(1.0),
+                            start_x - 4.0,
+                            line.rect.top()
+                                + (line.rect.height() - (line.font_size + 4.0)).max(0.0) * 0.5,
+                            (end_x - start_x).max(1.0) + 8.0,
+                            line.font_size + 4.0,
                         ),
                         color: theme.code_background,
+                        radius: 4.0,
                     },
                 );
             }
@@ -425,7 +427,8 @@ mod tests {
         )));
         assert!(plan.items.iter().any(|item| matches!(
             &item.command,
-            PaintCommand::FillRect { color, .. } if *color == theme.code_background
+            PaintCommand::RoundRect { color, radius, .. }
+                if *color == theme.code_background && (*radius - 4.0).abs() < f32::EPSILON
         )));
     }
 
