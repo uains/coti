@@ -642,3 +642,41 @@
 ### 下一步
 
 - 3.4：位置/选区属性测试，覆盖空文档、空段落、中文、Atom、多层 Quote/List/Table，以及阶段 3 文档汇总。
+
+## 2026-11-24 · 阶段 3 / 步骤 3.4：位置与选区属性测试
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `crates/md-document/tests/position_properties.rs`。
+- 构造包含以下结构的合法文档夹具：
+  - 空 Paragraph。
+  - 中文文本。
+  - Text + SoftBreak Atom + Text。
+  - 多层 Quote。
+  - 嵌套 List / ListItem。
+  - Table / TableRow / TableCell。
+- 新增 3 个属性测试：
+  - 每个合法 `DocPos` 至少有一种 Affinity 可往返。
+  - 每个叶子的所有合法局部 offset 都能转换回对应 `DocPos`。
+  - 随机文档上的多选区集合排序与 `validate` 通过。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：129 个测试通过。
+  - `md-document` 70 个单元测试 + 6 个属性测试。
+- 属性测试覆盖：空文档性质、空段落、中文、Atom、嵌套容器、表格单元格。
+
+### 设计说明
+
+- 属性测试先过滤非 UTF-8/Atom 边界的 `DocPos`；非法位置由 `resolve_position` 返回 `IllegalBoundary`，不参与往返断言。
+- Roundtrip 断言采用“至少一种 Affinity 成立”，与 Separator 两端歧义语义一致。
+- 多选区属性测试只构造不重叠的 collapsed Range；重叠检测由单元测试覆盖。
+- 文档夹具在属性测试中先执行 `Document::validate`，避免用非法树测试位置系统。
+
+### 下一步
+
+- 阶段 3 汇总验收，更新 `IMPLEMENTATION.md`、`TESTING.md`，等待确认后进入阶段 4（`md-markdown`）。
