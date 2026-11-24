@@ -218,3 +218,30 @@ ADR-0005 将 `BlockNode.source` 暂缓到阶段 4。Editor 在编辑时必须维
 - `md-markdown` 不得再定义自己的 SourceHint；如发现字段不足，先扩展 `md-document::StyleHints`。
 - SourceHint range 必须通过 `Document::validate` 校验；pristine 范围必须落在 UTF-8 边界内。
 - 后续 split/join/move 的 SourceHint 继承规则在阶段 5 实现。
+
+## ADR-0008：GPUI 固定 revision 接入与 View 边界
+
+- **状态：** Accepted
+- **日期：** 2026-11-24
+- **影响范围：** 根 `Cargo.toml`、`md-app`、`md-render`
+
+### 背景
+
+阶段 8/9 已完成可测试的 Paint/Shaping/Input/Resource 与 AppState/AppWindow，但真实 GPUI 窗口尚未接入。固定 revision `f4fe0be1f8c7974db07e01c5cd05bee0cf4eb8d9` 已验证可获取，并在当前 Windows 工具链上可编译。
+
+### 决策
+
+1. `gpui`、`gpui_platform` 加入 `[workspace.dependencies]`，仅 `md-app` 引用；`md-render` 及以下仍不依赖 GPUI。
+2. `CotiView` 使用 GPUI `Render` + `div` 绝对定位绘制 `PaintPlan`，不引入 GPUI 自绘 Element。
+3. 键盘/鼠标适配放在 `md-app::gpui_view`，只调用 `md_editor::Intent` 与 `md_layout` hit-test。
+4. 启动方式：`coti --gui [path]`；无参数时保留 headless banner，保证 smoke test 不阻塞。
+
+### 后果
+
+- `Cargo.lock` 显著增大；首次构建会拉取 Zed/GPUI 依赖。
+- 当前 View 是可运行基线：打开文档、渲染、键盘编辑、点击定位、Ctrl+S 保存。
+- 尚缺真实菜单栏、文件对话框、滚动事件、IME 平台绑定、图片加载与自定义 Element。
+
+### 迁移
+
+无数据迁移。后续替换 `div` 绘制为自定义 Element 时，保持 `PaintPlan`/`LayoutTree` 契约不变。

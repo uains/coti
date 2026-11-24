@@ -9,11 +9,13 @@ pub mod app;
 pub mod commands;
 pub mod config;
 pub mod features;
+pub mod gpui_view;
 pub mod logging;
 
 pub use app::{AppState, AppWindow, CloseDecision, atomic_write, default_config_path};
 pub use commands::{Command, Menu, MenuItem, menus};
 pub use config::{AppConfig, ThemeKind};
+pub use gpui_view::{CotiView, run_gui, run_gui_with_path};
 
 // Keep these declared crate boundaries linked while the module skeleton is empty.
 use md_core as _;

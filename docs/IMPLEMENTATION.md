@@ -705,7 +705,7 @@ HTML 粘贴属于后续扩展，不列入首个正式交付版本的完成条件
 | 7.4 几何 | 完成 | caret、hit-test、range rects、visible、block_outer |
 | 7.5 增量 | 完成（基础） | 叶级缓存、invalidate、全量等价、5000 次编辑测试 |
 
-### 阶段 8：`md-render` GPUI 渲染层（渲染核心完成，平台适配待接入）
+### 阶段 8：`md-render` GPUI 渲染层（渲染核心 + GPUI 基线完成）
 
 **目标：** 将 Layout 结果绘制为可交互的桌面文档视图。GPUI
 层负责呈现和输入适配，不负责编辑规则。
@@ -777,13 +777,13 @@ HTML 粘贴属于后续扩展，不列入首个正式交付版本的完成条件
 
 | 步骤 | 状态 | 产物 |
 |---|---|---|
-| 8.1 GPUI 基础 | 部分 | RenderView/PaintPlan 抽象；真实 GPUI 元素未接入 |
+| 8.1 GPUI 基础 | 完成（基线） | RenderView/PaintPlan + CotiView 真实窗口 |
 | 8.2 Shaping | 完成（Fake） | Shaper、FakeShaper、ShapingCache |
 | 8.3 Paint 层级 | 完成（模型） | 8 层 PaintLayer、背景/选区/文本/图片/Caret |
 | 8.4 交互 | 完成（适配） | Key→Intent、点击/拖动、滚动、光标闪烁 |
 | 8.5 资源 | 完成（缓存） | ImageState、ResourceCache、version |
 
-### 阶段 9：`md-app` 桌面应用（应用核心完成，GPUI 壳层待接入）
+### 阶段 9：`md-app` 桌面应用（应用核心 + GPUI 窗口基线完成）
 
 **目标：** 将编辑器内核和渲染层装配为可独立运行的本地桌面应用。
 

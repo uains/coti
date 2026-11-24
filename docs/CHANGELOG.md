@@ -1153,3 +1153,14 @@
 - Undo/Redo 改为 Document 快照权威，修复 JoinBlocks inverse 无法恢复 BlockId 的 redo 失效。
 - 全 Workspace 291 个测试通过。
 - **未完成**：真实 200 篇外部语料、全部 RuleId 覆盖、P95 性能测量、跨平台安装包/图标/签名、真实 GPUI 壳层。
+
+## 2026-11-24 · GPUI 真实窗口基线
+
+- `gpui` / `gpui_platform` 按 ADR-0001 revision 接入，仅 `md-app` 引用；`md-render` 及以下仍无 GPUI。
+- `CotiView`：GPUI `Render`，按 `PaintPlan` 绝对定位绘制背景、文本、选区、Caret、图片占位。
+- 键盘：字符、Backspace/Delete/Enter/Tab/Esc/方向/Home/End、Ctrl+Z/Ctrl+Shift+Z、Ctrl+S。
+- 鼠标：点击经 `LayoutTree::position_at_point` 定位，`track_focus` 获取键盘焦点。
+- 启动：`coti --gui [path]`；无参数保留 headless banner。
+- Windows 实机 smoke：窗口初始化成功并保持运行；带路径启动成功。
+- 全 Workspace 291 个测试通过；分层检查仍通过。
+- **未完成**：菜单栏/文件对话框/滚动/IME/图片加载/自定义 Element/平台三端验证。
