@@ -1192,3 +1192,12 @@
 - Release executable 实机 smoke：打开 Markdown、自定义 Element 首帧渲染、窗口保持运行。
 - 全 Workspace 291 个测试通过；clippy 与分层检查通过。
 - 构建脚本 `scripts/build-release.ps1`；运行说明 `docs/RELEASE.md`。
+
+## 2026-11-24 · 布局与渲染修正（参考实现对齐）
+
+- `md-layout` 支持注入真实 `TextMeasurer`；`layout_with_measurer` 供 GPUI 层使用。
+- GPUI 渲染前用 `WindowTextSystem::layout_line` 重新布局，换行/caret 与真实字体一致；删除对 FakeMeasurer 的运行时依赖。
+- `Line` 记录字体大小，Heading/CodeBlock 不再被统一按正文字号绘制。
+- 页面增加 24px padding、760px 最大版心并居中。
+- 自定义 Element 仍负责最终绘制；布局缓存按 document revision + viewport width 失效。
+- 291 个测试通过；clippy/分层检查通过。

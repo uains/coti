@@ -27,6 +27,10 @@ pub struct ResolvedStyle {
     pub image_height: f32,
     /// Thematic break thickness.
     pub rule_thickness: f32,
+    /// Horizontal page padding.
+    pub content_padding: f32,
+    /// Maximum readable content width.
+    pub max_content_width: f32,
 }
 
 impl Default for ResolvedStyle {
@@ -43,6 +47,8 @@ impl Default for ResolvedStyle {
             cell_padding: 6.0,
             image_height: 120.0,
             rule_thickness: 1.0,
+            content_padding: 24.0,
+            max_content_width: 760.0,
         }
     }
 }

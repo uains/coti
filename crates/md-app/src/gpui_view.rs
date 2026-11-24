@@ -4,11 +4,12 @@ use gpui::{
     App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle, GlobalElementId,
     InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
     MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, ScrollDelta, ScrollEvent,
-    SharedString, Style, Styled, TextAlign, TextRun, Window, WindowBounds, WindowOptions, div,
-    fill, point, px, relative, rgba, size,
+    SharedString, Style, Styled, TextAlign, TextRun, Window, WindowBounds, WindowOptions,
+    WindowTextSystem, div, fill, point, px, relative, rgba, size,
 };
 use gpui_platform::application;
 use md_core::Size;
+use md_layout::{LineMetrics, MeasureStyle, TextMeasurer};
 use md_render::{Color, PaintCommand};
 use std::panic;
 
@@ -207,6 +208,12 @@ impl CotiView {
 
 impl Render for CotiView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let font = window.text_style().font();
+        let mut measurer = SysMeasurer {
+            sys: window.text_system(),
+            font,
+        };
+        self.window.relayout_with(&mut measurer);
         window.set_window_title(&self.window.state.title());
         div()
             .size_full()
@@ -393,6 +400,57 @@ fn paint_bounds(bounds: Bounds<Pixels>, rect: md_core::Rect, scroll: f32) -> Bou
 
 fn text_color(color: Color) -> gpui::Hsla {
     rgba(color.0).into()
+}
+
+struct SysMeasurer<'a> {
+    sys: &'a WindowTextSystem,
+    font: gpui::Font,
+}
+
+impl SysMeasurer<'_> {
+    fn run(&self, len: usize) -> TextRun {
+        TextRun {
+            len,
+            font: self.font.clone(),
+            color: gpui::black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }
+    }
+}
+
+impl TextMeasurer for SysMeasurer<'_> {
+    fn advance(&self, text: &str, style: &MeasureStyle) -> f32 {
+        if text.is_empty() {
+            return 0.0;
+        }
+        let run = self.run(text.len());
+        f32::from(
+            self.sys
+                .layout_line(text, px(style.font_size), &[run], None)
+                .width,
+        )
+    }
+
+    fn atom_advance(&self, kind: &md_document::AtomKind, style: &MeasureStyle) -> f32 {
+        match kind {
+            md_document::AtomKind::HardBreak | md_document::AtomKind::SoftBreak => 0.0,
+            md_document::AtomKind::Image(_) => style.font_size,
+            md_document::AtomKind::InlineMath(source) => self.advance(source.as_str(), style),
+            md_document::AtomKind::FootnoteRef(label) => self.advance(label, style) * 0.6,
+        }
+    }
+
+    fn line_metrics(&self, style: &MeasureStyle) -> LineMetrics {
+        let run = self.run(1);
+        let layout = self.sys.layout_line("x", px(style.font_size), &[run], None);
+        LineMetrics::new(
+            f32::from(layout.ascent),
+            f32::from(layout.descent),
+            style.line_height,
+        )
+    }
 }
 
 /// Runs the GPUI application window.

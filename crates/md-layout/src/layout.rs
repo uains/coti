@@ -8,7 +8,7 @@ use md_document::{
 };
 
 use crate::inline::{InlineLayout, Line, layout_inline};
-use crate::measure::FakeMeasurer;
+use crate::measure::{FakeMeasurer, TextMeasurer};
 use crate::style::{LayoutEnv, MeasureStyle, ResolvedStyle};
 
 /// Geometry category of a laid-out block.
@@ -263,17 +263,34 @@ struct CachedInline {
 }
 
 /// Incremental layout engine with a leaf-line cache.
-#[derive(Debug, Default)]
-pub struct LayoutEngine {
+pub struct LayoutEngine<'a> {
     cache: HashMap<BlockId, CachedInline>,
-    measurer: FakeMeasurer,
+    measurer: Box<dyn TextMeasurer + 'a>,
 }
 
-impl LayoutEngine {
+impl Default for LayoutEngine<'static> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> LayoutEngine<'a> {
     /// Creates an engine with an empty cache.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            cache: HashMap::new(),
+            measurer: Box::new(FakeMeasurer::new()),
+        }
+    }
+
+    /// Creates an engine with a custom measurer.
+    #[must_use]
+    pub fn with_measurer(measurer: Box<dyn TextMeasurer + 'a>) -> Self {
+        Self {
+            cache: HashMap::new(),
+            measurer,
+        }
     }
 
     /// Invalidates one block.
@@ -290,11 +307,16 @@ impl LayoutEngine {
     #[must_use]
     pub fn sync(&mut self, document: &Document, env: LayoutEnv) -> LayoutTree {
         self.cache.retain(|id, _| document.node(*id).is_some());
-        let width = env.width();
+        let viewport_width = env.width();
+        let padding = env.style.content_padding.max(0.0);
+        let width = (viewport_width - padding * 2.0)
+            .max(1.0)
+            .min(env.style.max_content_width.max(1.0));
+        let x = ((viewport_width - width) * 0.5).max(padding.min(viewport_width * 0.5));
         let mut blocks = Vec::new();
         let mut y = 0.0;
         for id in document.root_children() {
-            let block = self.layout_block(document, *id, Point::new(0.0, y), width, env);
+            let block = self.layout_block(document, *id, Point::new(x, y), width, env);
             y = block.rect.bottom() + env.style.block_gap;
             blocks.push(block);
         }
@@ -461,7 +483,7 @@ impl LayoutEngine {
                 size: Size::new(width, cached.height),
             }
         } else {
-            let layout = layout_inline(content, &style, &self.measurer, width, Point::ZERO);
+            let layout = layout_inline(content, &style, self.measurer.as_ref(), width, Point::ZERO);
             self.cache.insert(
                 id,
                 CachedInline {
@@ -508,7 +530,7 @@ impl LayoutEngine {
         let layout = layout_inline(
             &content,
             &style,
-            &self.measurer,
+            self.measurer.as_ref(),
             (width - padding * 2.0).max(1.0),
             Point::ZERO,
         );
@@ -709,6 +731,32 @@ fn empty_layout(id: BlockId, origin: Point, width: f32, style: ResolvedStyle) ->
 #[must_use]
 pub fn body_measure_style(style: &ResolvedStyle) -> MeasureStyle {
     MeasureStyle::new(style.font_size, style.line_height)
+}
+
+/// Lays out a document with a caller-supplied measurer.
+#[must_use]
+pub fn layout_with_measurer(
+    document: &Document,
+    env: LayoutEnv,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
+    struct Borrowed<'a>(&'a mut dyn TextMeasurer);
+    impl TextMeasurer for Borrowed<'_> {
+        fn advance(&self, text: &str, style: &MeasureStyle) -> f32 {
+            self.0.advance(text, style)
+        }
+
+        fn atom_advance(&self, kind: &md_document::AtomKind, style: &MeasureStyle) -> f32 {
+            self.0.atom_advance(kind, style)
+        }
+
+        fn line_metrics(&self, style: &MeasureStyle) -> crate::measure::LineMetrics {
+            self.0.line_metrics(style)
+        }
+    }
+
+    let mut engine = LayoutEngine::with_measurer(Box::new(Borrowed(measurer)));
+    engine.sync(document, env)
 }
 
 #[cfg(test)]

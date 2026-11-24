@@ -99,7 +99,7 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme) {
                 ),
                 text,
                 color: theme.text,
-                font_size: theme.font_size,
+                font_size: line.font_size,
             },
         );
     }

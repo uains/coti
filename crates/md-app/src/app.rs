@@ -270,6 +270,8 @@ pub struct AppWindow {
     pub view: RenderView,
     /// Viewport size.
     pub viewport: Size,
+    layout_revision: u64,
+    layout_width: f32,
 }
 
 impl AppWindow {
@@ -281,18 +283,42 @@ impl AppWindow {
             state,
             view,
             viewport,
+            layout_revision: u64::MAX,
+            layout_width: viewport.width,
         }
     }
 
     /// Rebuilds the render view after edits or resize.
     pub fn sync_view(&mut self) {
         self.view = Self::build_view(&self.state, self.viewport);
+        self.layout_revision = u64::MAX;
     }
 
     /// Updates viewport size and re-syncs layout.
     pub fn resize(&mut self, viewport: Size) {
         self.viewport = viewport;
         self.sync_view();
+    }
+
+    /// Rebuilds layout using a real text measurer (for GPUI).
+    pub fn relayout_with(&mut self, measurer: &mut dyn md_layout::TextMeasurer) {
+        let revision = self.state.editor().document_revision();
+        if self.layout_revision == revision && self.layout_width == self.viewport.width {
+            return;
+        }
+        let style = ResolvedStyle {
+            font_size: self.state.config().font_size,
+            line_height: self.state.config().line_height,
+            ..ResolvedStyle::default()
+        };
+        self.view.layout = md_layout::layout_with_measurer(
+            self.state.editor().document(),
+            md_layout::LayoutEnv::new(self.viewport, style),
+            measurer,
+        );
+        self.view.scroll.clamp(self.view.layout.total_height());
+        self.layout_revision = revision;
+        self.layout_width = self.viewport.width;
     }
 
     fn build_view(state: &AppState, viewport: Size) -> RenderView {
