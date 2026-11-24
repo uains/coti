@@ -13,6 +13,7 @@ mod index;
 mod inline;
 mod position;
 mod selection;
+mod source;
 
 pub use arena::NodeArena;
 pub use block::{Align, BlockKind, BlockNode, FenceStyle};
@@ -27,3 +28,4 @@ pub use position::{Affinity, BlockGapPosition, DocPos, Position};
 pub use selection::{
     Anchor, CellPos, Selection, SelectionError, SelectionKind, SelectionResult, SelectionSet,
 };
+pub use source::{HardBreakStyle, HeadingStyle, ListStyleHint, SourceHint, StyleHints};

@@ -680,3 +680,39 @@
 ### 下一步
 
 - 阶段 3 汇总验收，更新 `IMPLEMENTATION.md`、`TESTING.md`，等待确认后进入阶段 4（`md-markdown`）。
+
+## 2026-11-24 · 阶段 4 / 步骤 4.1：SourceHint 接入文档模型
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `md-document::source` 模块：`SourceHint`、`StyleHints`、`HeadingStyle`、`ListStyleHint`、`HardBreakStyle`。
+- `BlockNode` 增加 `source: SourceHint`，提供 `source()` 访问。
+- `NodeArena::alloc_with_source` 与 `Document::insert_block_with_source` / `append_block_with_source`。
+- `Document` 新增：
+  - `new_empty`：供 Markdown importer 从空树开始构建。
+  - `source` / `set_source`。
+  - `set_inline_content`。
+  - `raw_text_mut`。
+  - `set_list_item_task`。
+- `Document::validate` 新增 pristine SourceHint 的 range/UTF-8 边界校验。
+- 新增 ADR-0007：SourceHint 移入 `md-document`，`md-markdown` 不再拥有侧表。
+- 新增 4 个 SourceHint 测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：133 个测试通过（`md-document` 74 个单元测试 + 6 个属性测试）。
+
+### 设计说明
+
+- SourceHint 是单一数据源：Parser 写入、Editor 维护、Serializer 读取；避免侧表与节点生命周期不同步。
+- `md-document` 只保存 Markdown 风格元数据，不解析 Markdown；风格字段集中在 `source` 模块。
+- `Document::new_empty` 是受控的 importer 入口；解析器必须在返回前填入至少一个根块。
+- pristine SourceHint 的 range 在 `validate` 时检查 UTF-8 边界与原文长度。
+
+### 下一步
+
+- 4.2：pulldown-cmark Parser/Builder，构建 Block/Inline/Marks/Atom 并写入 SourceHint。

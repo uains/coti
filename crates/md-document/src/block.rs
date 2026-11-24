@@ -2,7 +2,7 @@
 
 use md_core::{TextBuf, TextOffset};
 
-use crate::{BlockId, DocumentError, DocumentResult, ImageRef, InlineContent};
+use crate::{BlockId, DocumentError, DocumentResult, ImageRef, InlineContent, SourceHint};
 
 /// The visual alignment of a table column.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -290,6 +290,17 @@ impl BlockKind {
         }
     }
 
+    /// Returns mutable raw text for a raw or code block.
+    pub(crate) fn raw_text_mut(&mut self) -> Option<&mut TextBuf> {
+        match self {
+            Self::CodeBlock { text, .. }
+            | Self::HtmlBlock(text)
+            | Self::MathBlock(text)
+            | Self::FrontMatter(text) => Some(text),
+            _ => None,
+        }
+    }
+
     /// Returns a stable kind name for diagnostics.
     #[must_use]
     pub const fn kind_name(&self) -> &'static str {
@@ -402,12 +413,23 @@ pub struct BlockNode {
     id: BlockId,
     parent: Option<BlockId>,
     kind: BlockKind,
+    source: SourceHint,
 }
 
 impl BlockNode {
     #[allow(dead_code)] // Used by NodeArena allocation in the next step.
-    pub(crate) fn new(id: BlockId, parent: Option<BlockId>, kind: BlockKind) -> Self {
-        Self { id, parent, kind }
+    pub(crate) fn new(
+        id: BlockId,
+        parent: Option<BlockId>,
+        kind: BlockKind,
+        source: SourceHint,
+    ) -> Self {
+        Self {
+            id,
+            parent,
+            kind,
+            source,
+        }
     }
 
     /// Returns the stable node identity.
@@ -428,12 +450,20 @@ impl BlockNode {
         &self.kind
     }
 
-    #[allow(dead_code)] // Used by Document structural operations in the next step.
+    /// Returns source-fidelity metadata.
+    #[must_use]
+    pub const fn source(&self) -> &SourceHint {
+        &self.source
+    }
+
     pub(crate) fn kind_mut(&mut self) -> &mut BlockKind {
         &mut self.kind
     }
 
-    #[allow(dead_code)] // Used by Document structural operations in the next step.
+    pub(crate) fn source_mut(&mut self) -> &mut SourceHint {
+        &mut self.source
+    }
+
     pub(crate) fn set_parent(&mut self, parent: Option<BlockId>) {
         self.parent = parent;
     }
@@ -602,7 +632,12 @@ mod tests {
     #[test]
     fn block_node_keeps_identity_when_moved() {
         let id = BlockId::new(5, 2);
-        let mut node = BlockNode::new(id, Some(BlockId::new(1, 1)), paragraph("x"));
+        let mut node = BlockNode::new(
+            id,
+            Some(BlockId::new(1, 1)),
+            paragraph("x"),
+            crate::SourceHint::default(),
+        );
         assert_eq!(node.id(), id);
         assert_eq!(node.parent(), Some(BlockId::new(1, 1)));
 

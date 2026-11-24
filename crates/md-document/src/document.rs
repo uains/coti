@@ -2,9 +2,11 @@
 
 use std::collections::HashSet;
 
+use md_core::TextBuf;
+
 use crate::{
     BlockId, BlockKind, BlockNode, DocumentError, DocumentIndex, DocumentResult, InlineContent,
-    NodeArena,
+    NodeArena, SourceHint,
 };
 
 /// A document tree backed by a generation-checked arena.
@@ -32,6 +34,20 @@ impl Document {
         };
         document.rebuild_index();
         document
+    }
+
+    /// Creates a structurally empty document for an importer.
+    ///
+    /// The document is invalid until at least one root block is inserted; this
+    /// constructor exists so the Markdown parser does not have to remove a
+    /// synthetic paragraph after parsing.
+    #[must_use]
+    pub fn new_empty() -> Self {
+        Self {
+            root: Vec::new(),
+            arena: NodeArena::new(),
+            index: DocumentIndex::default(),
+        }
     }
 
     /// Returns the derived document index.
@@ -75,6 +91,67 @@ impl Document {
         self.arena.get(id).map(BlockNode::kind)
     }
 
+    /// Returns source-fidelity metadata for a block.
+    #[must_use]
+    pub fn source(&self, id: BlockId) -> Option<&SourceHint> {
+        self.arena.get(id).map(BlockNode::source)
+    }
+
+    /// Sets source-fidelity metadata for a block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a stale id.
+    pub fn set_source(&mut self, id: BlockId, source: SourceHint) -> DocumentResult<()> {
+        let node = self.arena.get_mut(id).ok_or_else(|| stale(id))?;
+        *node.source_mut() = source;
+        Ok(())
+    }
+
+    /// Replaces the inline content of a Paragraph, Heading, or TableCell.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a stale id or a block without inline content.
+    pub fn set_inline_content(
+        &mut self,
+        id: BlockId,
+        content: InlineContent,
+    ) -> DocumentResult<()> {
+        let node = self.arena.get_mut(id).ok_or_else(|| stale(id))?;
+        let target =
+            node.kind_mut()
+                .inline_content_mut()
+                .ok_or_else(|| DocumentError::NotALeaf {
+                    index: id.index(),
+                    generation: id.generation(),
+                })?;
+        *target = content;
+        self.rebuild_index();
+        Ok(())
+    }
+
+    /// Returns mutable raw text for a CodeBlock or raw block.
+    pub fn raw_text_mut(&mut self, id: BlockId) -> Option<&mut TextBuf> {
+        self.arena.get_mut(id)?.kind_mut().raw_text_mut()
+    }
+
+    /// Sets a list item's task checkbox state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a stale id or a non-list-item block.
+    pub fn set_list_item_task(&mut self, id: BlockId, checked: Option<bool>) -> DocumentResult<()> {
+        let node = self.arena.get_mut(id).ok_or_else(|| stale(id))?;
+        let BlockKind::ListItem { task, .. } = node.kind_mut() else {
+            return Err(DocumentError::Invariant {
+                message: format!("block {id} is not a list item"),
+            });
+        };
+        *task = checked;
+        Ok(())
+    }
+
     /// Returns the number of live blocks.
     #[must_use]
     pub fn block_count(&self) -> usize {
@@ -104,6 +181,21 @@ impl Document {
         parent: Option<BlockId>,
         index: usize,
         kind: BlockKind,
+    ) -> DocumentResult<BlockId> {
+        self.insert_block_with_source(parent, index, kind, SourceHint::default())
+    }
+
+    /// Inserts a block with explicit source metadata.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::insert_block`].
+    pub fn insert_block_with_source(
+        &mut self,
+        parent: Option<BlockId>,
+        index: usize,
+        kind: BlockKind,
+        source: SourceHint,
     ) -> DocumentResult<BlockId> {
         let index_limit = if let Some(parent_id) = parent {
             let parent_node = self.arena.get(parent_id).ok_or_else(|| stale(parent_id))?;
@@ -141,7 +233,7 @@ impl Document {
             });
         }
 
-        let id = self.arena.alloc(kind, parent);
+        let id = self.arena.alloc_with_source(kind, parent, source);
         self.insert_child_at(parent, index, id)?;
         self.rebuild_index();
         Ok(id)
@@ -157,6 +249,20 @@ impl Document {
         parent: Option<BlockId>,
         kind: BlockKind,
     ) -> DocumentResult<BlockId> {
+        self.append_block_with_source(parent, kind, SourceHint::default())
+    }
+
+    /// Appends a block with explicit source metadata.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::insert_block`].
+    pub fn append_block_with_source(
+        &mut self,
+        parent: Option<BlockId>,
+        kind: BlockKind,
+        source: SourceHint,
+    ) -> DocumentResult<BlockId> {
         let index = if let Some(parent_id) = parent {
             self.children(parent_id)
                 .ok_or_else(|| stale(parent_id))?
@@ -164,7 +270,7 @@ impl Document {
         } else {
             self.root.len()
         };
-        self.insert_block(parent, index, kind)
+        self.insert_block_with_source(parent, index, kind, source)
     }
 
     /// Removes a block and its subtree.
@@ -380,6 +486,11 @@ impl Document {
 
         let node = self.arena.get(id).ok_or_else(|| stale(id))?;
         node.kind().validate()?;
+        node.source()
+            .validate()
+            .map_err(|message| DocumentError::Invariant {
+                message: format!("block {id} source hint: {message}"),
+            })?;
 
         if let BlockKind::Table { aligns, rows } = node.kind() {
             for row_id in rows {

@@ -1,6 +1,6 @@
 //! Block arena with generation-checked ids and transaction-owned staging.
 
-use crate::{BlockId, BlockKind, BlockNode, DocumentError, DocumentResult};
+use crate::{BlockId, BlockKind, BlockNode, DocumentError, DocumentResult, SourceHint};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct NodeSlot {
@@ -61,6 +61,20 @@ impl NodeArena {
     ///
     /// Panics only if the `u32` slot index space is exhausted.
     pub fn alloc(&mut self, kind: BlockKind, parent: Option<BlockId>) -> BlockId {
+        self.alloc_with_source(kind, parent, SourceHint::default())
+    }
+
+    /// Allocates a live node with explicit source metadata.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the `u32` slot index space is exhausted.
+    pub fn alloc_with_source(
+        &mut self,
+        kind: BlockKind,
+        parent: Option<BlockId>,
+        source: SourceHint,
+    ) -> BlockId {
         while let Some(index) = self.free_list.pop() {
             let Some(slot) = self.slots.get_mut(index as usize) else {
                 continue;
@@ -70,7 +84,7 @@ impl NodeArena {
             }
 
             let id = BlockId::new(index, slot.generation);
-            slot.node = Some(BlockNode::new(id, parent, kind));
+            slot.node = Some(BlockNode::new(id, parent, kind, source));
             self.live_len += 1;
             return id;
         }
@@ -79,7 +93,7 @@ impl NodeArena {
         let id = BlockId::new(index, 1);
         self.slots.push(NodeSlot {
             generation: 1,
-            node: Some(BlockNode::new(id, parent, kind)),
+            node: Some(BlockNode::new(id, parent, kind, source)),
             staged: false,
         });
         self.live_len += 1;

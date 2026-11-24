@@ -188,3 +188,33 @@ DocumentIndex 是派生缓存，但 Selection、Layout 和 Editor 都需要与�
 - `Node` / `TableCells` 选择的 anchor/head 是占位值，不参与其语义校验。
 - 索引陈旧由 `Document::validate` 发现；事务提交前必须调用。
 - 后续 Layout/Selection 必须通过 Document 的公开索引访问，不得各自重建一份长期缓存。
+
+## ADR-0007：SourceHint 移入 `md-document`
+
+- **状态：** Accepted
+- **日期：** 2026-11-24
+- **影响范围：** `BlockNode`、`md-document`、`md-markdown`、阶段 4～9
+
+### 背景
+
+ADR-0005 将 `BlockNode.source` 暂缓到阶段 4。Editor 在编辑时必须维护每个节点的 source 状态；如果完整 `SourceHint` 留在 `md-markdown`，`md-editor` 就必须依赖 Markdown 或通过侧表回调同步，容易产生陈旧元数据。
+
+### 决策
+
+1. `SourceHint`、`StyleHints`、`HeadingStyle`、`ListStyleHint`、`HardBreakStyle` 移入 `md-document`。
+2. `BlockNode` 增加 `source: SourceHint`。
+3. `md-markdown` 只负责解析并写入 SourceHint、序列化时读取；不拥有第二份节点元数据。
+4. `SourceHint` 的 Markdown 风格字段集中在 `source` 模块；`md-document` 不解析 Markdown。
+
+### 理由
+
+- 单一数据源：Editor、Parser、Serializer 读写同一个 SourceHint，避免侧表与节点生命周期不同步。
+- 未编辑保真、dirty 重排和 Undo 都可以直接依赖节点上的元数据。
+- 让 `md-document` 拥有“源文本元数据”类型，是有限度的边界让步；不引入 Markdown 解析逻辑。
+
+### 后果
+
+- `md-document` 的职责说明需要承认 source metadata；`BlockNode` 不再是无 Markdown 概念的纯语义节点。
+- `md-markdown` 不得再定义自己的 SourceHint；如发现字段不足，先扩展 `md-document::StyleHints`。
+- SourceHint range 必须通过 `Document::validate` 校验；pristine 范围必须落在 UTF-8 边界内。
+- 后续 split/join/move 的 SourceHint 继承规则在阶段 5 实现。
