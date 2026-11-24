@@ -1020,7 +1020,8 @@ impl Editor {
         let end = index.resolve_position(&self.document, to, Affinity::Upstream)?;
 
         if start.block_id == end.block_id {
-            let (block_id, range) = self.primary_local_range(from, to)?;
+            let block_id = start.block_id;
+            let range = TextRange::new(TextOffset::new(start.offset), TextOffset::new(end.offset));
             let operation = Operation::ReplaceText {
                 block_id,
                 range,
@@ -2568,6 +2569,36 @@ mod tests {
         assert!(output.starts_with("a\n"), "unexpected output: {output:?}");
         assert!(output.contains("- b"), "unexpected output: {output:?}");
         assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn delete_range_inside_table_cell() {
+        let source = "| ab |\n|---|\n| cd |\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let leaf = index
+            .leaf_order()
+            .iter()
+            .find(|leaf| {
+                parsed
+                    .document()
+                    .kind(**leaf)
+                    .and_then(BlockKind::inline_content)
+                    .is_some_and(|content| content.plain_text() == "ab")
+            })
+            .copied()
+            .unwrap();
+        let start = index.leaf_start(index.leaf_index(leaf).unwrap()).unwrap();
+        let len = index.leaf_len(index.leaf_index(leaf).unwrap()).unwrap();
+        let selection = SelectionSet::new(Selection::range(
+            Anchor::new(DocPos::new(start + 1), Affinity::Downstream),
+            Anchor::new(DocPos::new(start + len), Affinity::Upstream),
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("| a |"), "unexpected output: {output:?}");
+        assert!(!output.contains("| ab |"), "unexpected output: {output:?}");
     }
 
     #[test]

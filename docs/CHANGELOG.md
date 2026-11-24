@@ -1489,3 +1489,10 @@
 - 列表：无序标记改为 `•` 文本，不再绘制方点；列表缩进 22。
 - 新增测试：跨列表范围删除、sync_view 保留滚动。
 - 316 个测试通过。
+
+## 2026-11-24 · 修复表格单元格范围删除
+
+- 同一块内范围删除不再通过 primary_local_range 重新用 Downstream 解析终点。
+- 直接使用已按 Upstream 解析好的 start/end 构造 TextRange，避免表格单元格末尾解析到下一格导致失败。
+- 新增 `delete_range_inside_table_cell` 测试。
+- 317 个测试通过。
