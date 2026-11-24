@@ -39,7 +39,7 @@ cargo bench
 |---|---:|---|
 | `md-core` | 32 unit + 7 property | 文本偏移/范围、UTF-8 边界、grapheme、UTF-16、修改原子性、几何、属性往返 |
 | `md-document` | 70 unit + 6 property | Inline、Block、Arena、Document、DocumentIndex、DocPos/Position、Selection、Validator |
-| `md-markdown` | 2 | 解析错误、文档错误转发 |
+| `md-markdown` | 10 unit + 4 integration | 解析器、Serializer、200 篇夹具逐字节保真/重解析/稳定性 |
 | `md-editor` | 3 | 过期 revision、非法 Intent、文档错误转发 |
 | `md-layout` | 3 | 几何错误、缺失块布局、文档错误转发 |
 | `md-render` | 2 | 资源错误、布局错误转发 |
@@ -70,6 +70,18 @@ cargo bench
 - 多选区集合倒序排序后通过 `SelectionSet::validate`。
 - 夹具包含空段落、中文、Atom、多层 Quote、嵌套 List、Table/TableCell。
 
+## Markdown 夹具
+
+`crates/md-markdown/tests/fixtures/markdown/` 包含 200 个合成夹具（20 类 × 10 变体）。`tests/fixtures.rs` 验证：
+
+- 夹具数量 ≥200。
+- 每个夹具 `parse → validate → serialize` 逐字节相等（AC-01 过渡门槛）。
+- dirty canonical 输出可重新 parse 且 validate。
+- dirty canonical 二次序列化稳定（幂等）。
+- 夹具覆盖 CommonMark/GFM、中文、Emoji、表格、脚注、数学、Frontmatter、HTML、嵌套容器。
+
+已知限制：这些是合成语料，不是外部真实 Markdown；阶段 11 前仍需真实语料复验。
+
 ## 约定
 
 1. 测试名描述“行为 + 条件 + 预期”，例如 `stale_revision_reports_both_revisions`。
@@ -80,12 +92,13 @@ cargo bench
 6. 随机测试使用固定 seed 时可复现；失败输出必须包含 seed 和最小化输入。
 7. 属性测试生成小规模输入（≤64 个 char），避免 CI 时间不可控。
 
-## 阶段 0～3 验收
+## 阶段 0～4 验收
 
 - 七个 crate 均有可执行测试。
 - `cargo test --workspace` 全部通过。
 - `md-app` 集成测试真实启动 `coti` 二进制并检查输出。
 - `md-core` 属性测试覆盖文本边界、grapheme、UTF-16 和修改往返。
 - `md-document` 属性测试覆盖根级插入/删除/移动、DocPos/Affinity 往返和多选区排序。
+- `md-markdown` 200 篇合成夹具通过 pristine 逐字节相等、dirty 重解析与稳定性。
 - 后续属性测试在阶段 5/6 扩展到 Undo/History，不伪造未实现模块的属性测试。
 

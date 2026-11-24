@@ -1336,7 +1336,7 @@ docs/
 
 - 阶段 3：`DocumentIndex`、`DocPos`、`Position`、`Selection`。建议先实现 DocPos/Affinity/Block Separator 与前缀索引，再实现双向位置转换和 Selection，最后做随机位置属性测试。
 
-### 阶段 3：DocumentIndex、DocPos 与 Selection（已完成，等待确认）
+### 阶段 3：DocumentIndex、DocPos 与 Selection（已完成，已确认）
 
 **完成日期：** 2026-11-24
 
@@ -1372,7 +1372,7 @@ docs/
 - `SelectionKind::TableCells` 增加 `table: BlockId`，这是设计示例之外的必要补充。
 - `Node` / `TableCells` 的 anchor/head 是占位值；语义校验由 kind 负责。
 - Selection 尚未与 PositionMapping 关联；阶段 5 事务提交时补充。
-- `BlockNode.source` 仍未加入；阶段 4 前必须按 ADR-0005 决策 SourceHint 归属。
+- `BlockNode.source` 在阶段 3 完成时尚未加入；阶段 4 已按 ADR-0007 加入。
 - 多选区重叠只检查 Range 与 Range；Node/TableCells 与 Range 的交叉策略留给 Editor。
 
 #### 下一步
@@ -1384,5 +1384,57 @@ docs/
   3. Frontmatter、脚注、数学、HTML 等特殊节点。
   4. Serializer：pristine 切片、dirty 重排、容器重缩进。
   5. 200 篇逐字节保真 + `parse(serialize(doc)) ≅ doc` 属性测试。
+
+### 阶段 4：`md-markdown` 解析与序列化（已完成，等待确认）
+
+**完成日期：** 2026-11-24
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 4.1 SourceHint | 完成 | SourceHint/StyleHints 移入 `md-document`，BlockNode.source，ADR-0007 |
+| 4.2 Parser/Builder | 完成 | pulldown-cmark 0.13.6、块/Inline/Marks/Atom、SourceHint、FootnoteDefinition |
+| 4.3 Serializer | 完成 | 规范 Markdown Writer、Marks/链接/Atom/列表/表格/代码/Raw |
+| 4.4 夹具与保真 | 完成 | 200 个合成夹具、AC-01 逐字节、canonical reparse/stability |
+
+#### 当前接口
+
+- `md_markdown::{MarkdownDocument, parse, MarkdownError, MarkdownResult}`。
+- `MarkdownDocument::{document, document_mut, source, serialize, validate, is_dirty}`。
+- `md_document::{SourceHint, StyleHints, HeadingStyle, ListStyleHint, HardBreakStyle}`。
+- `BlockKind::FootnoteDefinition { label, children }`。
+- Parser 启用 CommonMark + GFM + Tables/Strikethrough/TaskLists/Footnotes/Math/YAML Metadata。
+- Serializer dirty 路径规范输出；pristine 路径逐字节返回原文。
+
+#### 验证结果
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`：通过。
+- `cargo test --workspace --locked`：145 个测试通过。
+  - `md-markdown` 10 个单元测试 + 4 个夹具集成测试。
+- 200 个夹具全部通过：
+  - pristine 逐字节相等。
+  - dirty canonical reparse + validate。
+  - dirty canonical 二次序列化稳定。
+- `./scripts/check-layering.ps1`：通过。
+
+#### 已知问题与偏差
+
+- 200 篇是合成夹具，不是外部真实语料；AC-01 的“真实 Markdown”要求留待阶段 11 前补充。
+- AC-02 的结构同构断言 `parse(serialize(doc)) ≅ doc` 尚未实现；当前以 reparse + validate + 二次序列化稳定作为过渡门槛。
+- dirty 序列化统一走规范 Writer，未复用 SourceHint 的 pristine 子块和 StyleHints；等 Editor 精确标记脏节点后优化。
+- inline image 的 alt 未保留；`AtomKind::Image` 只有 ImageRef。
+- DefinitionList 仍映射为 Quote 容器；属于模型近似。
+- SourceHint 的 StyleHints 字段已定义但多数未填充；标记风格复用尚未实现。
+- Parser 对 tight list 的段落采用懒创建；SourceHint 范围可能覆盖整个 Item 而不是精确 Paragraph。
+
+#### 下一步
+
+- 阶段 5：`md-editor`。建议拆为：
+  1. Intent 类型 + Editor 状态 + 有序 Rule 注册表。
+  2. Operation 原语 + inverse（文本、Inline、Block、Move、Split/Join）。
+  3. Transaction：base revision、preflight、apply、inverse、rollback、validate。
+  4. PositionMapping 原语与组合。
+  5. Enter/Backspace/DeleteForward/Tab 等规则表与夹具。
+  6. 随机 Intent 属性测试；History 在阶段 6 接入。
 
 ---
