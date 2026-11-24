@@ -1,13 +1,16 @@
-//! Real GPUI view and window bootstrap.
+//! Real GPUI view with a custom `Element` renderer.
 
 use gpui::{
-    App, AppContext, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Render, Styled, Window, WindowBounds,
-    WindowOptions, div, px, rgb, size,
+    App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle, GlobalElementId,
+    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
+    MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, SharedString, Style, Styled,
+    TextAlign, TextRun, Window, WindowBounds, WindowOptions, div, fill, point, px, relative, rgba,
+    size,
 };
 use gpui_platform::application;
 use md_core::Size;
-use md_render::PaintCommand;
+use md_render::{Color, PaintCommand};
+use std::panic;
 
 use crate::app::{AppState, AppWindow};
 use crate::config::AppConfig;
@@ -138,42 +141,113 @@ impl CotiView {
     }
 }
 
-fn gpui_color(color: md_render::Color) -> gpui::Rgba {
-    rgb((color.0 >> 8) & 0x00FF_FFFF)
-}
-
 impl Render for CotiView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let selection = self.window.state.editor().selection().clone();
+        div()
+            .size_full()
+            .overflow_hidden()
+            .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(Self::on_key_down))
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .child(DocumentElement { view: cx.entity() })
+    }
+}
+
+/// Custom GPUI element that paints the layout's paint plan directly.
+struct DocumentElement {
+    view: Entity<CotiView>,
+}
+
+enum PreparedItem {
+    Quad(PaintQuad),
+    Text {
+        line: Box<gpui::ShapedLine>,
+        origin: gpui::Point<Pixels>,
+        line_height: Pixels,
+    },
+}
+
+struct PreparedDocument {
+    items: Vec<PreparedItem>,
+}
+
+impl Element for DocumentElement {
+    type RequestLayoutState = ();
+    type PrepaintState = PreparedDocument;
+
+    fn id(&self) -> Option<ElementId> {
+        Some(ElementId::Name("coti-document".into()))
+    }
+
+    fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let height = self
+            .view
+            .read(cx)
+            .window
+            .view
+            .layout
+            .total_height()
+            .max(1.0);
+        let mut style = Style::default();
+        style.size.width = relative(1.0).into();
+        style.size.height = px(height).into();
+        (window.request_layout(style, [], cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        let view = self.view.read(cx);
+        let selection = view.window.state.editor().selection().clone();
         let caret = selection
             .primary_selection()
             .map(|selection| selection.head.pos);
-        let plan = self
+        let plan = view
             .window
             .view
-            .paint(self.window.state.editor().document(), &selection, caret);
-        let theme = self.window.view.theme;
-        let scroll = self.window.view.scroll.offset_y;
-
-        let mut canvas = div()
-            .absolute()
-            .left(px(0.0))
-            .top(px(-scroll))
-            .w_full()
-            .h(px(self.window.view.layout.total_height().max(1.0)));
-
+            .paint(view.window.state.editor().document(), &selection, caret);
+        let scroll = view.window.view.scroll.offset_y;
+        let text_style = window.text_style();
+        let mut items = Vec::new();
+        items.push(PreparedItem::Quad(fill(
+            bounds,
+            rgba(view.window.view.theme.background.0),
+        )));
         for item in plan.items {
             match item.command {
                 PaintCommand::FillRect { rect, color } => {
-                    canvas = canvas.child(
-                        div()
-                            .absolute()
-                            .left(px(rect.left()))
-                            .top(px(rect.top()))
-                            .w(px(rect.width().max(1.0)))
-                            .h(px(rect.height().max(1.0)))
-                            .bg(gpui_color(color)),
-                    );
+                    items.push(PreparedItem::Quad(fill(
+                        paint_bounds(bounds, rect, scroll),
+                        rgba(color.0),
+                    )));
+                }
+                PaintCommand::Caret { rect, color } => {
+                    items.push(PreparedItem::Quad(fill(
+                        paint_bounds(bounds, rect, scroll),
+                        rgba(color.0),
+                    )));
+                }
+                PaintCommand::Image { rect, .. } => {
+                    items.push(PreparedItem::Quad(fill(
+                        paint_bounds(bounds, rect, scroll),
+                        rgba(view.window.view.theme.border.0),
+                    )));
                 }
                 PaintCommand::Text {
                     rect,
@@ -181,55 +255,78 @@ impl Render for CotiView {
                     color,
                     font_size,
                 } => {
-                    canvas = canvas.child(
-                        div()
-                            .absolute()
-                            .left(px(rect.left()))
-                            .top(px(rect.top()))
-                            .w(px(rect.width().max(1.0)))
-                            .h(px(rect.height().max(1.0)))
-                            .text_size(px(font_size))
-                            .text_color(gpui_color(color))
-                            .child(text),
+                    let run = TextRun {
+                        len: text.len(),
+                        font: text_style.font(),
+                        color: text_color(color),
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    };
+                    let line = window.text_system().shape_line(
+                        SharedString::from(text),
+                        px(font_size),
+                        &[run],
+                        None,
                     );
+                    items.push(PreparedItem::Text {
+                        line: Box::new(line),
+                        origin: point(
+                            bounds.left() + px(rect.left()),
+                            bounds.top() + px(rect.top() - scroll),
+                        ),
+                        line_height: px(rect.height()),
+                    });
                 }
-                PaintCommand::Caret { rect, color } => {
-                    canvas = canvas.child(
-                        div()
-                            .absolute()
-                            .left(px(rect.left()))
-                            .top(px(rect.top()))
-                            .w(px(rect.width().max(1.0)))
-                            .h(px(rect.height().max(1.0)))
-                            .bg(gpui_color(color)),
-                    );
-                }
-                PaintCommand::Image { rect, source } => {
-                    canvas = canvas.child(
-                        div()
-                            .absolute()
-                            .left(px(rect.left()))
-                            .top(px(rect.top()))
-                            .w(px(rect.width().max(1.0)))
-                            .h(px(rect.height().max(1.0)))
-                            .border_1()
-                            .border_color(gpui_color(theme.border))
-                            .child(source),
+            }
+        }
+        PreparedDocument { items }
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        for item in &prepaint.items {
+            match item {
+                PreparedItem::Quad(quad) => window.paint_quad(quad.clone()),
+                PreparedItem::Text {
+                    line,
+                    origin,
+                    line_height,
+                } => {
+                    let _ = line.as_ref().paint(
+                        *origin,
+                        *line_height,
+                        TextAlign::Left,
+                        None,
+                        window,
+                        cx,
                     );
                 }
             }
         }
-
-        div()
-            .relative()
-            .size_full()
-            .overflow_hidden()
-            .bg(gpui_color(theme.background))
-            .track_focus(&self.focus_handle)
-            .on_key_down(cx.listener(Self::on_key_down))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-            .child(canvas)
     }
+}
+
+fn paint_bounds(bounds: Bounds<Pixels>, rect: md_core::Rect, scroll: f32) -> Bounds<Pixels> {
+    Bounds::new(
+        point(
+            bounds.left() + px(rect.left()),
+            bounds.top() + px(rect.top() - scroll),
+        ),
+        size(px(rect.width().max(1.0)), px(rect.height().max(1.0))),
+    )
+}
+
+fn text_color(color: Color) -> gpui::Hsla {
+    rgba(color.0).into()
 }
 
 /// Runs the GPUI application window.

@@ -1164,3 +1164,14 @@
 - Windows 实机 smoke：窗口初始化成功并保持运行；带路径启动成功。
 - 全 Workspace 291 个测试通过；分层检查仍通过。
 - **未完成**：菜单栏/文件对话框/滚动/IME/图片加载/自定义 Element/平台三端验证。
+
+## 2026-11-24 · GPUI 自定义 Element 渲染
+
+- `DocumentElement` 实现 GPUI `Element` 的 `request_layout` / `prepaint` / `paint`。
+- Layout 高度由 `LayoutTree::total_height` 提供；`prepaint` 将 `PaintPlan` 转为 `PaintQuad` 与 `ShapedLine`。
+- `paint` 直接调用 `Window::paint_quad` 与 `ShapedLine::paint`，不再为每个绘制项创建 `div`。
+- 文本使用 GPUI `TextSystem::shape_line`，颜色/字号来自 `PaintCommand`。
+- 保留外层 `div` 只负责焦点、键盘与鼠标命中；绘制全部由自定义 Element 完成。
+- Windows 实机 smoke：带 Markdown 文件启动、首帧绘制成功、保持运行。
+- 全 Workspace 291 个测试通过；分层检查通过。
+- **未完成**：滚动事件、IME ElementInputHandler、图片真实绘制、局部重绘/裁剪优化。

@@ -232,14 +232,14 @@ ADR-0005 将 `BlockNode.source` 暂缓到阶段 4。Editor 在编辑时必须维
 ### 决策
 
 1. `gpui`、`gpui_platform` 加入 `[workspace.dependencies]`，仅 `md-app` 引用；`md-render` 及以下仍不依赖 GPUI。
-2. `CotiView` 使用 GPUI `Render` + `div` 绝对定位绘制 `PaintPlan`，不引入 GPUI 自绘 Element。
+2. `CotiView` 使用 GPUI `Render` 承载自定义 `DocumentElement`；`DocumentElement` 实现 `Element` 并在 `prepaint`/`paint` 中直接绘制 `PaintPlan`，不再逐项创建 `div`。
 3. 键盘/鼠标适配放在 `md-app::gpui_view`，只调用 `md_editor::Intent` 与 `md_layout` hit-test。
 4. 启动方式：`coti --gui [path]`；无参数时保留 headless banner，保证 smoke test 不阻塞。
 
 ### 后果
 
 - `Cargo.lock` 显著增大；首次构建会拉取 Zed/GPUI 依赖。
-- 当前 View 是可运行基线：打开文档、渲染、键盘编辑、点击定位、Ctrl+S 保存。
+- 当前 View 是可运行基线：自定义 Element 渲染、打开文档、键盘编辑、点击定位、Ctrl+S 保存。
 - 尚缺真实菜单栏、文件对话框、滚动事件、IME 平台绑定、图片加载与自定义 Element。
 
 ### 迁移
