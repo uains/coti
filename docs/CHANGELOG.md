@@ -1220,3 +1220,11 @@
 - 删除 `RenderView::sync` 与 `sync_incremental` 的 Fake 默认布局入口；生产 app 只走真实 measurer。
 - `FakeMeasurer` 仅保留在 md-layout 单元测试/无窗口测试中（与参考工程一致）。
 - 291 个测试通过；实际窗口截图验证换行、字重、代码字体、主题。
+
+## 2026-11-24 · 跨段删除与拖拽选区修复
+
+- Backspace 在段首自动 Join 前一段（Paragraph/Heading，同父）。
+- DeleteForward 在段尾自动 Join 后一段；空段、末段删除不再失效。
+- DeleteForward 在 separator 处区分 Upstream/Downstream，避免误合并空段。
+- 鼠标拖动建立跨块 Range 选区（on_mouse_move/on_mouse_up）。
+- 新增 2 个跨段删除测试；293 个测试通过。

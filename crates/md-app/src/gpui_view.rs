@@ -3,9 +3,9 @@
 use gpui::{
     App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle, FontWeight,
     GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
-    MouseButton, MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, ScrollDelta,
-    ScrollEvent, SharedString, Style, Styled, TextAlign, TextRun, Window, WindowBounds,
-    WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, Pixels,
+    Render, ScrollDelta, ScrollEvent, SharedString, Style, Styled, TextAlign, TextRun, Window,
+    WindowBounds, WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size,
 };
 use gpui_platform::application;
 use md_core::Size;
@@ -21,6 +21,8 @@ use crate::config::AppConfig;
 pub struct CotiView {
     window: AppWindow,
     focus_handle: FocusHandle,
+    dragging: bool,
+    drag_anchor: Option<md_document::DocPos>,
 }
 
 impl CotiView {
@@ -30,6 +32,8 @@ impl CotiView {
         Self {
             window: AppWindow::new(state, viewport),
             focus_handle: cx.focus_handle(),
+            dragging: false,
+            drag_anchor: None,
         }
     }
 
@@ -203,6 +207,8 @@ impl CotiView {
             f32::from(event.position.y) + self.window.view.scroll.offset_y,
         );
         if let Some(position) = self.window.view.layout.position_at_point(point) {
+            self.dragging = true;
+            self.drag_anchor = Some(position);
             let selection = md_document::SelectionSet::new(md_document::Selection::collapsed(
                 position,
                 md_document::Affinity::Downstream,
@@ -211,6 +217,53 @@ impl CotiView {
             self.window.sync_view();
             cx.notify();
         }
+    }
+
+    fn on_mouse_move(
+        &mut self,
+        event: &MouseMoveEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.dragging {
+            return;
+        }
+        let point = md_core::Point::new(
+            f32::from(event.position.x),
+            f32::from(event.position.y) + self.window.view.scroll.offset_y,
+        );
+        let Some(position) = self.window.view.layout.position_at_point(point) else {
+            return;
+        };
+        let anchor = self.drag_anchor.unwrap_or(position);
+        let (start, end) = if anchor <= position {
+            (anchor, position)
+        } else {
+            (position, anchor)
+        };
+        let selection = md_document::SelectionSet::new(md_document::Selection::range(
+            md_document::Anchor::new(start, md_document::Affinity::Upstream),
+            md_document::Anchor::new(end, md_document::Affinity::Downstream),
+        ));
+        if self
+            .window
+            .state
+            .editor_mut()
+            .set_selection(selection)
+            .is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn on_mouse_up(
+        &mut self,
+        _event: &MouseUpEvent,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        self.dragging = false;
+        self.drag_anchor = None;
     }
 }
 
@@ -229,6 +282,8 @@ impl Render for CotiView {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll(cx.listener(Self::on_scroll))
             .child(DocumentElement { view: cx.entity() })
     }

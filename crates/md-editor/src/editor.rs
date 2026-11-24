@@ -689,6 +689,75 @@ impl Editor {
         Ok(())
     }
 
+    fn join_previous_block(&mut self, current: md_document::BlockId) -> EditorResult<bool> {
+        let index = self.document.index();
+        let Some(current_leaf) = index.leaf_index(current) else {
+            return Ok(false);
+        };
+        if current_leaf == 0 {
+            return Ok(false);
+        }
+        let previous = index.leaf_order()[current_leaf - 1];
+        if self.document.parent(previous) != self.document.parent(current)
+            || !Self::joinable(self.document.kind(previous))
+            || !Self::joinable(self.document.kind(current))
+        {
+            return Ok(false);
+        }
+        let previous_len = index.leaf_len(current_leaf - 1).unwrap_or(0);
+        let previous_start = index.leaf_start(current_leaf - 1).unwrap_or(0);
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::JoinBlocks {
+            left: previous,
+            right: current,
+        });
+        self.commit(transaction)?;
+        self.selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(previous_start + previous_len),
+            Affinity::Upstream,
+        ));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(true)
+    }
+
+    fn join_next_block(&mut self, current: md_document::BlockId) -> EditorResult<bool> {
+        let index = self.document.index();
+        let Some(current_leaf) = index.leaf_index(current) else {
+            return Ok(false);
+        };
+        let next_leaf = current_leaf + 1;
+        let Some(next) = index.leaf_order().get(next_leaf).copied() else {
+            return Ok(false);
+        };
+        if self.document.parent(next) != self.document.parent(current)
+            || !Self::joinable(self.document.kind(current))
+            || !Self::joinable(self.document.kind(next))
+        {
+            return Ok(false);
+        }
+        let caret = DocPos::new(
+            index.leaf_start(current_leaf).unwrap_or(0) + index.leaf_len(current_leaf).unwrap_or(0),
+        );
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::JoinBlocks {
+            left: current,
+            right: next,
+        });
+        self.commit(transaction)?;
+        self.selection = SelectionSet::new(Selection::collapsed(caret, Affinity::Upstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(true)
+    }
+
+    fn joinable(kind: Option<&BlockKind>) -> bool {
+        matches!(
+            kind,
+            Some(BlockKind::Paragraph(_) | BlockKind::Heading { .. })
+        )
+    }
+
     fn delete_range(&mut self, from: DocPos, to: DocPos) -> EditorResult<()> {
         let index = self.document.index();
         let start = index.resolve_position(&self.document, from, Affinity::Downstream)?;
@@ -796,6 +865,33 @@ impl Editor {
         }
 
         let (from, to) = if selection.is_collapsed() {
+            let index = self.document.index();
+            let downstream =
+                index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+            let upstream =
+                index.resolve_position(&self.document, selection.head.pos, Affinity::Upstream)?;
+            let upstream_len = self
+                .document
+                .kind(upstream.block_id)
+                .and_then(BlockKind::leaf_len)
+                .unwrap_or(0);
+            let resolved = if upstream.block_id != downstream.block_id
+                && upstream.offset > 0
+                && upstream.offset == upstream_len
+                && downstream.offset == 0
+            {
+                upstream
+            } else {
+                downstream
+            };
+            let len = self
+                .document
+                .kind(resolved.block_id)
+                .and_then(BlockKind::leaf_len)
+                .unwrap_or(0);
+            if resolved.offset >= len && self.join_next_block(resolved.block_id)? {
+                return Ok(());
+            }
             let Some(next) = self
                 .document
                 .index()
@@ -1098,7 +1194,15 @@ impl Editor {
                 return Ok(());
             }
 
-            let Some(previous) = index.prev_cursor(&self.document, selection.head.pos) else {
+            if resolved.offset == 0 && self.join_previous_block(resolved.block_id)? {
+                return Ok(());
+            }
+
+            let Some(previous) = self
+                .document
+                .index()
+                .prev_cursor(&self.document, selection.head.pos)
+            else {
                 return Ok(());
             };
             (previous, selection.head.pos)
@@ -1591,6 +1695,32 @@ mod tests {
     }
 
     #[test]
+    fn backspace_at_block_start_joins_previous_paragraph() {
+        let mut editor = editor_at(6);
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert_eq!(editor.document().root_children().len(), 2);
+        let block = editor.document().root_children()[1];
+        assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(5));
+        assert_eq!(head(&editor), DocPos::new(5));
+    }
+
+    #[test]
+    fn delete_forward_at_block_end_joins_next_paragraph() {
+        let mut editor = editor_at(5);
+        editor
+            .set_selection(SelectionSet::new(Selection::collapsed(
+                DocPos::new(5),
+                Affinity::Upstream,
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteForward).unwrap();
+        assert_eq!(editor.document().root_children().len(), 2);
+        let block = editor.document().root_children()[1];
+        assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(5));
+        assert_eq!(head(&editor), DocPos::new(5));
+    }
+
+    #[test]
     fn enter_splits_paragraph_at_caret() {
         let mut editor = editor_at(2);
         let before = editor.document().root_children().len();
@@ -1918,7 +2048,7 @@ mod tests {
     }
 
     #[test]
-    fn backspace_at_second_quote_child_does_not_exit_quote() {
+    fn backspace_at_second_quote_child_joins_previous() {
         let (mut editor, quote) = quote_editor(&["ab", "cd"]);
         let second = editor.document().children(quote).unwrap()[1];
         let index = editor.document().index();
@@ -1932,7 +2062,7 @@ mod tests {
             .unwrap();
         editor.dispatch(Intent::DeleteBackward).unwrap();
         assert!(editor.document().node(quote).is_some());
-        assert_eq!(editor.document().children(quote).unwrap().len(), 2);
+        assert_eq!(editor.document().children(quote).unwrap().len(), 1);
     }
 
     #[test]
