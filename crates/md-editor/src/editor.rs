@@ -229,6 +229,8 @@ impl Editor {
                 self.select_table_cell(table, start.row, start.column + 1)?;
             } else if start.row + 1 < rows.len() {
                 self.select_table_cell(table, start.row + 1, 0)?;
+            } else {
+                self.append_table_row_and_select(table)?;
             }
             return Ok(());
         }
@@ -258,6 +260,8 @@ impl Editor {
                 );
                 if has_next_row {
                     self.select_table_cell(table, row + 1, 0)?;
+                } else {
+                    self.append_table_row_and_select(table)?;
                 }
             }
             return Ok(());
@@ -679,6 +683,25 @@ impl Editor {
     ) -> EditorResult<()> {
         let cell = CellPos::new(row, column);
         self.set_selection(SelectionSet::new(Selection::table_cells(table, cell, cell)))
+    }
+
+    fn append_table_row_and_select(&mut self, table: md_document::BlockId) -> EditorResult<()> {
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::AppendTableRow { table });
+        transaction.apply(self)?;
+
+        let rows = self
+            .document
+            .children(table)
+            .ok_or_else(|| EditorError::InvalidIntent {
+                message: "table has no rows".to_owned(),
+            })?;
+        let row_index = rows.len().saturating_sub(1);
+        let cell = CellPos::new(row_index, 0);
+        self.set_selection(SelectionSet::new(Selection::table_cells(table, cell, cell)))?;
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(())
     }
 
     fn nearest_list_item(&self, block: md_document::BlockId) -> Option<md_document::BlockId> {
@@ -1230,7 +1253,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_at_last_table_cell_is_noop() {
+    fn tab_at_last_table_cell_appends_row() {
         let mut editor = editor_with_table();
         let table = *editor.document().root_children().first().unwrap();
         editor
@@ -1240,11 +1263,11 @@ mod tests {
                 CellPos::new(1, 1),
             )))
             .unwrap();
-        let revision = editor.document_revision();
         editor
             .dispatch(Intent::ChangeIndent { outdent: false })
             .unwrap();
-        assert_eq!(editor.document_revision(), revision);
-        assert_eq!(table_cell(&editor), CellPos::new(1, 1));
+        assert_eq!(table_cell(&editor), CellPos::new(2, 0));
+        assert_eq!(editor.document().children(table).unwrap().len(), 3);
+        assert!(editor.document().validate().is_ok());
     }
 }

@@ -1034,3 +1034,10 @@
 - 下一格 / 上一格；跨行移动到下一行首格/上一行末格。
 - 末格 Tab、首格 Shift+Tab 为 no-op；追加新行尚未实现。
 - `md-editor` 62 个测试；全 Workspace 214 个测试通过。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第九批）：末格追加表格行
+
+- 新增 `Operation::AppendTableRow` / `RemoveTableRow`。
+- 末格 Tab 追加同列数空行并选中新行首格。
+- RemoveTableRow 仅允许删除末尾空行，作为 Append 的 inverse。
+- `md-editor` 64 个测试；全 Workspace 216 个测试通过。

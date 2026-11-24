@@ -87,6 +87,16 @@ pub enum Operation {
         /// List item to outdent.
         id: BlockId,
     },
+    /// Appends an empty row to a table.
+    AppendTableRow {
+        /// Target table.
+        table: BlockId,
+    },
+    /// Removes an empty trailing table row.
+    RemoveTableRow {
+        /// Target row.
+        row: BlockId,
+    },
 }
 
 /// Result of applying an operation.
@@ -236,6 +246,20 @@ impl Operation {
                     affected: vec![*id],
                 })
             }
+            Self::AppendTableRow { table } => {
+                let row = append_table_row(document, *table)?;
+                Ok(AppliedOperation {
+                    inverse: Self::RemoveTableRow { row },
+                    affected: vec![*table, row],
+                })
+            }
+            Self::RemoveTableRow { row } => {
+                let table = remove_table_row(document, *row)?;
+                Ok(AppliedOperation {
+                    inverse: Self::AppendTableRow { table },
+                    affected: vec![table, *row],
+                })
+            }
         }
     }
 }
@@ -377,6 +401,92 @@ fn outdent_list_item_inner(document: &mut Document, id: BlockId) -> EditorResult
         document.remove_block(list_id)?;
     }
     Ok(())
+}
+
+fn append_table_row(document: &mut Document, table: BlockId) -> EditorResult<BlockId> {
+    let snapshot = document.snapshot();
+    let result = append_table_row_inner(document, table);
+    if result.is_err() {
+        document.restore(snapshot);
+    }
+    result
+}
+
+fn append_table_row_inner(document: &mut Document, table: BlockId) -> EditorResult<BlockId> {
+    let Some(BlockKind::Table { aligns, rows }) = document.kind(table) else {
+        return Err(EditorError::InvalidIntent {
+            message: format!("block {table} is not a table"),
+        });
+    };
+    let columns = aligns.len();
+    let row_index = rows.len();
+    let row = document.insert_block(
+        Some(table),
+        row_index,
+        BlockKind::TableRow { cells: vec![] },
+    )?;
+    for _ in 0..columns {
+        let index = document.children(row).map_or(0, |children| children.len());
+        document.insert_block(
+            Some(row),
+            index,
+            BlockKind::TableCell {
+                content: InlineContent::new(),
+            },
+        )?;
+    }
+    Ok(row)
+}
+
+fn remove_table_row(document: &mut Document, row: BlockId) -> EditorResult<BlockId> {
+    let snapshot = document.snapshot();
+    let result = remove_table_row_inner(document, row);
+    if result.is_err() {
+        document.restore(snapshot);
+    }
+    result
+}
+
+fn remove_table_row_inner(document: &mut Document, row: BlockId) -> EditorResult<BlockId> {
+    if !matches!(document.kind(row), Some(BlockKind::TableRow { .. })) {
+        return Err(EditorError::InvalidIntent {
+            message: format!("block {row} is not a table row"),
+        });
+    }
+    let table = document
+        .parent(row)
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "table row has no parent table".to_owned(),
+        })?;
+    let Some(BlockKind::Table { rows, .. }) = document.kind(table) else {
+        return Err(EditorError::InvalidIntent {
+            message: "table row parent is not a table".to_owned(),
+        });
+    };
+    let index =
+        rows.iter()
+            .position(|id| *id == row)
+            .ok_or_else(|| EditorError::InvalidIntent {
+                message: "table row is not linked from its table".to_owned(),
+            })?;
+    if index + 1 != rows.len() {
+        return Err(EditorError::InvalidIntent {
+            message: "only the trailing table row can be removed".to_owned(),
+        });
+    }
+    for cell in document.children(row).unwrap_or(&[]) {
+        if document
+            .kind(*cell)
+            .and_then(BlockKind::inline_content)
+            .is_some_and(|content| !content.is_empty())
+        {
+            return Err(EditorError::InvalidIntent {
+                message: "non-empty table row cannot be removed".to_owned(),
+            });
+        }
+    }
+    document.remove_block(row)?;
+    Ok(table)
 }
 
 fn apply_replace_text(
@@ -787,5 +897,73 @@ mod tests {
             .unwrap();
         assert!(document.validate().is_ok());
         assert_eq!(document.children(list).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn append_table_row_adds_cells_and_inverse_removes_it() {
+        let mut document = Document::new();
+        let table = document
+            .insert_block(
+                None,
+                0,
+                BlockKind::Table {
+                    aligns: vec![md_document::Align::Left; 2],
+                    rows: vec![],
+                },
+            )
+            .unwrap();
+        let row = document
+            .append_block(Some(table), BlockKind::TableRow { cells: vec![] })
+            .unwrap();
+        for _ in 0..2 {
+            document
+                .append_block(
+                    Some(row),
+                    BlockKind::TableCell {
+                        content: InlineContent::from_text("x"),
+                    },
+                )
+                .unwrap();
+        }
+
+        let applied = Operation::AppendTableRow { table }
+            .apply(&mut document)
+            .unwrap();
+        assert!(document.validate().is_ok());
+        assert_eq!(document.children(table).unwrap().len(), 2);
+        applied.inverse.apply(&mut document).unwrap();
+        assert!(document.validate().is_ok());
+        assert_eq!(document.children(table).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn removing_non_empty_table_row_is_rejected() {
+        let mut document = Document::new();
+        let table = document
+            .insert_block(
+                None,
+                0,
+                BlockKind::Table {
+                    aligns: vec![md_document::Align::Left],
+                    rows: vec![],
+                },
+            )
+            .unwrap();
+        let row = document
+            .append_block(Some(table), BlockKind::TableRow { cells: vec![] })
+            .unwrap();
+        document
+            .append_block(
+                Some(row),
+                BlockKind::TableCell {
+                    content: InlineContent::from_text("x"),
+                },
+            )
+            .unwrap();
+        assert!(
+            Operation::RemoveTableRow { row }
+                .apply(&mut document)
+                .is_err()
+        );
     }
 }
