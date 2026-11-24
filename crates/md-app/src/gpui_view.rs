@@ -2,18 +2,19 @@
 
 use gpui::ClipboardItem;
 use gpui::{
-    App, AppContext, Bounds, ClickEvent, Context, Corners, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, FontWeight, GlobalElementId, InspectorElementId,
-    InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, Pixels, Render, RenderImage,
-    ScrollDelta, ScrollEvent, SharedString, StatefulInteractiveElement, Style, Styled, TextAlign,
-    TextRun, TitlebarOptions, UTF16Selection, Window, WindowBounds, WindowDecorations,
-    WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size,
+    App, AppContext, AssetSource, Bounds, ClickEvent, Context, Corners, Element, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, FontWeight, GlobalElementId,
+    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, Pixels, Render,
+    RenderImage, ScrollDelta, ScrollEvent, SharedString, StatefulInteractiveElement, Style, Styled,
+    TextAlign, TextRun, TitlebarOptions, UTF16Selection, Window, WindowBounds, WindowDecorations,
+    WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size, svg,
 };
 use gpui_platform::application;
 use md_core::Size;
 use md_layout::{LineMetrics, MeasureStyle, TextMeasurer};
 use md_render::{Color, PaintCommand};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::panic;
@@ -26,6 +27,25 @@ use crate::commands::{self, Command};
 use crate::config::AppConfig;
 
 const TITLEBAR_HEIGHT: f32 = 36.0;
+
+struct Assets {
+    base: PathBuf,
+}
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
+        std::fs::read(self.base.join(path))
+            .map(|bytes| Some(Cow::Owned(bytes)))
+            .map_err(Into::into)
+    }
+
+    fn list(&self, path: &str) -> anyhow::Result<Vec<SharedString>> {
+        Ok(std::fs::read_dir(self.base.join(path))?
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .map(SharedString::from)
+            .collect())
+    }
+}
 use crate::features::{self, SearchState};
 
 /// GPUI view backed by the headless application state.
@@ -142,7 +162,6 @@ impl CotiView {
     fn open_search(&mut self) {
         self.search_open = true;
         self.search = SearchState::default();
-        self.outline_open = false;
         self.palette_open = false;
     }
 
@@ -389,6 +408,21 @@ impl CotiView {
             self.palette_key(key, event.keystroke.key_char.as_deref(), window, cx);
             return;
         }
+        if modifiers.control && key.eq_ignore_ascii_case("a") {
+            let end = md_document::DocPos::new(
+                self.window.state.editor().document().index().doc_length(),
+            );
+            let selection = md_document::SelectionSet::new(md_document::Selection::range(
+                md_document::Anchor::new(
+                    md_document::DocPos::ZERO,
+                    md_document::Affinity::Upstream,
+                ),
+                md_document::Anchor::new(end, md_document::Affinity::Downstream),
+            ));
+            let _ = self.window.state.editor_mut().set_selection(selection);
+            cx.notify();
+            return;
+        }
         if modifiers.control && key.eq_ignore_ascii_case("f") {
             self.open_search();
             cx.notify();
@@ -564,46 +598,36 @@ impl Render for CotiView {
         let muted = rgba(self.window.view.theme.muted.0);
         let title = self.window.state.title();
 
-        let minimize = div()
-            .id("window-minimize")
-            .h_full()
-            .w(px(44.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .text_color(muted)
-            .hover(|style| style.bg(rgba(0x8080_8022)))
-            .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
-            .child("—");
-        let maximize = div()
-            .id("window-maximize")
-            .h_full()
-            .w(px(44.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .text_color(muted)
-            .hover(|style| style.bg(rgba(0x8080_8022)))
-            .on_click(cx.listener(|_, _, window, _| window.zoom_window()))
-            .child("□");
-        let close = div()
-            .id("window-close")
-            .h_full()
-            .w(px(44.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .text_color(muted)
-            .hover(|style| style.bg(rgba(0xE811_2322)))
-            .on_click(cx.listener(|_, _, window, _| window.remove_window()))
-            .child("×");
-        let drag_area = div().id("titlebar-drag").flex_1().h_full().on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|_, _, window, _| window.start_window_move()),
+        let minimize = window_icon_button(
+            "window-minimize",
+            "icons/minimize.svg",
+            muted,
+            rgba(0x8080_8022),
+            cx.listener(|_, _, window, _| window.minimize_window()),
         );
+        let maximize = window_icon_button(
+            "window-maximize",
+            "icons/maximize.svg",
+            muted,
+            rgba(0x8080_8022),
+            cx.listener(|_, _, window, _| window.zoom_window()),
+        );
+        let close = window_icon_button(
+            "window-close",
+            "icons/x.svg",
+            muted,
+            rgba(0xE811_2322),
+            cx.listener(|_, _, window, _| window.remove_window()),
+        );
+        let drag_area = div()
+            .id("titlebar-drag")
+            .flex_1()
+            .h_full()
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, window, _| window.start_window_move()),
+            );
 
         let menu_items = commands::menus();
         let mut titlebar = div()
@@ -648,22 +672,32 @@ impl Render for CotiView {
                     .child(title),
             )
             .child(drag_area)
-            .child(toolbar_label(
-                "搜索",
+            .child(toolbar_icon(
+                "toolbar-search",
+                "icons/search.svg",
+                muted,
                 cx.listener(|this, _, _, cx| {
                     this.open_search();
                     cx.notify();
                 }),
             ))
-            .child(toolbar_label(
-                "大纲",
+            .child(toolbar_icon(
+                "toolbar-outline",
+                if self.outline_open {
+                    "icons/panel-left-close.svg"
+                } else {
+                    "icons/panel-left-open.svg"
+                },
+                muted,
                 cx.listener(|this, _, _, cx| {
                     this.outline_open = !this.outline_open;
                     cx.notify();
                 }),
             ))
-            .child(toolbar_label(
-                "命令",
+            .child(toolbar_icon(
+                "toolbar-command",
+                "icons/command.svg",
+                muted,
                 cx.listener(|this, _, _, cx| {
                     this.palette_open = true;
                     this.palette_query.clear();
@@ -671,8 +705,10 @@ impl Render for CotiView {
                     cx.notify();
                 }),
             ))
-            .child(toolbar_label(
-                "主题",
+            .child(toolbar_icon(
+                "toolbar-theme",
+                "icons/palette.svg",
+                muted,
                 cx.listener(|this, _, _, cx| {
                     let next = this.window.state.config().theme.next();
                     this.window.state.config_mut().theme = next;
@@ -995,18 +1031,7 @@ impl EntityInputHandler for CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.search_open {
-            self.search.query.push_str(text);
-            self.run_search();
-            window.notify_text_input_changed(&self.focus_handle);
-            cx.notify();
-            return;
-        }
-        if self.palette_open {
-            self.palette_query.push_str(text);
-            self.palette_index = 0;
-            window.notify_text_input_changed(&self.focus_handle);
-            cx.notify();
+        if self.search_open || self.palette_open {
             return;
         }
         if let Some(range) = range {
@@ -1032,7 +1057,6 @@ impl EntityInputHandler for CotiView {
         cx: &mut Context<Self>,
     ) {
         if self.search_open || self.palette_open {
-            self.replace_text_in_range(range, new_text, window, cx);
             return;
         }
         if let Some(range) = range {
@@ -1211,6 +1235,7 @@ impl Element for DocumentElement {
             bounds,
             rgba(view.window.view.theme.background.0),
         )));
+        let composing = view.window.state.editor().composition().is_some();
         for item in plan.items {
             match item.command {
                 PaintCommand::FillRect { rect, color } => {
@@ -1220,10 +1245,12 @@ impl Element for DocumentElement {
                     )));
                 }
                 PaintCommand::Caret { rect, color } => {
-                    items.push(PreparedItem::Quad(fill(
-                        paint_bounds(bounds, rect, scroll),
-                        rgba(color.0),
-                    )));
+                    if !composing {
+                        items.push(PreparedItem::Quad(fill(
+                            paint_bounds(bounds, rect, scroll),
+                            rgba(color.0),
+                        )));
+                    }
                 }
                 PaintCommand::Image { rect, source } => {
                     let image_bounds = paint_bounds(bounds, rect, scroll);
@@ -1290,8 +1317,9 @@ impl Element for DocumentElement {
             && let Some(selection) = view.window.state.editor().selection().primary_selection()
             && let Some(caret) = view.window.view.layout.caret_rect(selection.head.pos)
         {
+            let text_len = text.len();
             let run = TextRun {
-                len: text.len(),
+                len: text_len,
                 font: text_style.font(),
                 color: text_color(view.window.view.theme.accent),
                 background_color: None,
@@ -1304,14 +1332,23 @@ impl Element for DocumentElement {
                 &[run],
                 None,
             );
+            let origin = point(
+                bounds.left() + px(caret.left()),
+                bounds.top() + px(caret.top() - scroll),
+            );
+            let width = f32::from(line.x_for_index(text_len));
             items.push(PreparedItem::Text {
                 line: Box::new(line),
-                origin: point(
-                    bounds.left() + px(caret.left()),
-                    bounds.top() + px(caret.top() - scroll),
-                ),
+                origin,
                 line_height: px(caret.height()),
             });
+            items.push(PreparedItem::Quad(fill(
+                Bounds::new(
+                    point(origin.x + px(width), origin.y),
+                    size(px(1.5), px(caret.height())),
+                ),
+                rgba(view.window.view.theme.accent.0),
+            )));
         }
         PreparedDocument { items }
     }
@@ -1374,20 +1411,43 @@ fn paint_bounds(bounds: Bounds<Pixels>, rect: md_core::Rect, scroll: f32) -> Bou
     )
 }
 
-fn toolbar_label(
-    label: &'static str,
+fn toolbar_icon(
+    id: &'static str,
+    path: &'static str,
+    color: gpui::Rgba,
     listener: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     div()
-        .id(ElementId::Name(format!("toolbar-{label}").into()))
-        .px_2()
-        .py_1()
+        .id(ElementId::Name(id.into()))
+        .size(px(28.0))
+        .flex()
+        .items_center()
+        .justify_center()
         .rounded(px(4.0))
-        .text_size(px(12.0))
         .cursor_pointer()
         .hover(|style| style.bg(rgba(0x8080_8022)))
         .on_click(listener)
-        .child(label)
+        .child(svg().path(path).size(px(16.0)).text_color(color))
+}
+
+fn window_icon_button(
+    id: &'static str,
+    path: &'static str,
+    color: gpui::Rgba,
+    hover: gpui::Rgba,
+    listener: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(ElementId::Name(id.into()))
+        .h_full()
+        .w(px(44.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .hover(move |style| style.bg(hover))
+        .on_click(listener)
+        .child(svg().path(path).size(px(14.0)).text_color(color))
 }
 
 thread_local! {
@@ -1542,27 +1602,31 @@ pub fn run_gui() -> anyhow::Result<()> {
 ///
 /// Returns an error if the platform application cannot start.
 pub fn run_gui_with_path(path: Option<std::path::PathBuf>) -> anyhow::Result<()> {
-    application().run(move |cx: &mut App| {
-        let bounds = Bounds {
-            origin: point(px(40.0), px(40.0)),
-            size: size(px(1000.0), px(600.0)),
-        };
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            window_decorations: Some(WindowDecorations::Client),
-            titlebar: Some(TitlebarOptions {
-                title: None,
-                appears_transparent: true,
-                traffic_light_position: None,
-            }),
-            ..Default::default()
-        };
-        let path = path.clone();
-        cx.open_window(options, |_, cx| {
-            cx.new(|cx| CotiView::from_path(path, Size::new(1000.0, 564.0), cx))
+    application()
+        .with_assets(Assets {
+            base: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets"),
         })
-        .expect("create Coti window");
-        cx.activate(true);
-    });
+        .run(move |cx: &mut App| {
+            let bounds = Bounds {
+                origin: point(px(40.0), px(40.0)),
+                size: size(px(1000.0), px(600.0)),
+            };
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_decorations: Some(WindowDecorations::Client),
+                titlebar: Some(TitlebarOptions {
+                    title: None,
+                    appears_transparent: true,
+                    traffic_light_position: None,
+                }),
+                ..Default::default()
+            };
+            let path = path.clone();
+            cx.open_window(options, |_, cx| {
+                cx.new(|cx| CotiView::from_path(path, Size::new(1000.0, 564.0), cx))
+            })
+            .expect("create Coti window");
+            cx.activate(true);
+        });
     Ok(())
 }

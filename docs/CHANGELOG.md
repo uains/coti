@@ -1286,3 +1286,13 @@
 - 实测截图：侧栏 240px，正文整体右移，无重叠。
 - IME `EntityInputHandler` 代码已接入（UTF-16 映射、marked/commit/cancel、bounds、预编辑绘制）。
 - 293 个测试通过。
+
+## 2026-11-24 · 修复搜索/全选/IME 光标/图标
+
+- 搜索不再关闭大纲。
+- 搜索输入只由 key handler 处理一次，移除 EntityInputHandler 的重复写入。
+- Ctrl+A 全选整个文档。
+- IME 预编辑：正文 caret 隐藏，改为在预编辑文本末尾绘制 caret；ime_text 包含 composition。
+- 标题栏按钮改用 assets/icons SVG：search、panel-left-open/close、command、palette、minimize、maximize、x。
+- 配置 GPUI AssetSource，资源目录 assets/。
+- 293 个测试通过。
