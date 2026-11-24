@@ -8,7 +8,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, anyhow};
 use md_core::Size;
 use md_editor::{Editor, Intent};
-use md_layout::ResolvedStyle;
 use md_markdown::serialize_document;
 use md_render::RenderView;
 
@@ -306,11 +305,10 @@ impl AppWindow {
         if self.layout_revision == revision && self.layout_width == self.viewport.width {
             return;
         }
-        let style = ResolvedStyle {
-            font_size: self.state.config().font_size,
-            line_height: self.state.config().line_height,
-            ..ResolvedStyle::default()
-        };
+        let style = self.state.config().theme.layout_style(
+            self.state.config().font_size,
+            self.state.config().line_height,
+        );
         self.view.layout = md_layout::layout_with_measurer(
             self.state.editor().document(),
             md_layout::LayoutEnv::new(self.viewport, style),
@@ -322,12 +320,13 @@ impl AppWindow {
     }
 
     fn build_view(state: &AppState, viewport: Size) -> RenderView {
-        let theme = state.config().theme.render_theme();
-        let style = ResolvedStyle {
-            font_size: state.config().font_size,
-            line_height: state.config().line_height,
-            ..ResolvedStyle::default()
-        };
+        let mut theme = state.config().theme.render_theme();
+        theme.font_size = state.config().font_size;
+        theme.line_height = state.config().line_height;
+        let style = state
+            .config()
+            .theme
+            .layout_style(state.config().font_size, state.config().line_height);
         RenderView::empty(viewport, style, theme)
     }
 

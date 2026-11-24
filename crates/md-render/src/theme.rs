@@ -44,8 +44,14 @@ pub struct Theme {
     pub border: Color,
     /// Table header background.
     pub table_header: Color,
-    /// Accent color for quote bars and list markers.
+    /// Accent color for links and the caret.
     pub accent: Color,
+    /// Quote bar color.
+    pub quote_bar: Color,
+    /// Code block border color.
+    pub code_border: Color,
+    /// List bullet/number color.
+    pub list_marker: Color,
     /// Body font size.
     pub font_size: f32,
     /// Body line height.
@@ -71,6 +77,9 @@ impl Default for Theme {
             border: Color(0xD9DD_E5FF),
             table_header: Color(0xF1F3_F7FF),
             accent: Color(0x1A73_E8FF),
+            quote_bar: Color(0x1A73_E8FF),
+            code_border: Color(0xD9DD_E5FF),
+            list_marker: Color(0x1A73_E8FF),
             font_size: 14.0,
             line_height: 20.0,
             caret_width: 2.0,

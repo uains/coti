@@ -262,6 +262,16 @@ impl CotiView {
         self.stop_blink();
     }
 
+    fn cycle_theme(&mut self) {
+        let next = self.window.state.config().theme.next();
+        let theme = next.render_theme();
+        let config = self.window.state.config_mut();
+        config.theme = next;
+        config.font_size = theme.font_size;
+        config.line_height = theme.line_height;
+        self.window.sync_view();
+    }
+
     fn close_palette(&mut self) {
         if self.palette_open {
             self.palette_open = false;
@@ -431,8 +441,7 @@ impl CotiView {
                 }
             }
             Command::ToggleTheme => {
-                let next = self.window.state.config().theme.next();
-                self.window.state.config_mut().theme = next;
+                self.cycle_theme();
             }
             Command::Quit => {
                 window.remove_window();
@@ -620,9 +629,7 @@ impl CotiView {
             return;
         }
         if modifiers.control && modifiers.shift && key.eq_ignore_ascii_case("t") {
-            let next = self.window.state.config().theme.next();
-            self.window.state.config_mut().theme = next;
-            self.window.sync_view();
+            self.cycle_theme();
             cx.notify();
             return;
         }
@@ -954,9 +961,7 @@ impl Render for CotiView {
                 muted,
                 cx.listener(|this, _, _, cx| {
                     this.close_palette();
-                    let next = this.window.state.config().theme.next();
-                    this.window.state.config_mut().theme = next;
-                    this.window.sync_view();
+                    this.cycle_theme();
                     cx.notify();
                 }),
             ))

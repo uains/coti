@@ -4,13 +4,16 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use md_layout::ResolvedStyle;
 use md_render::{Color, Theme};
 
 /// Named application theme.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ThemeKind {
-    /// Dark ink theme.
+    /// Feishu/Lark document theme.
     #[default]
+    Feishu,
+    /// Dark ink theme.
     Ink,
     /// Light paper theme.
     Paper,
@@ -24,6 +27,27 @@ impl ThemeKind {
     pub fn render_theme(self) -> Theme {
         let mut theme = Theme::default();
         match self {
+            Self::Feishu => {
+                theme.background = Color(0xFFFF_FFFF);
+                theme.surface = Color(0xFFFF_FFFF);
+                theme.text = Color(0x1F23_29FF);
+                theme.heading = Color(0x1F23_29FF);
+                theme.muted = Color(0x8F95_9EFF);
+                theme.selection = Color(0xD6E4_FFFF);
+                theme.caret = Color(0x3370_FFFF);
+                theme.code_background = Color(0xF5F6_F7FF);
+                theme.code_text = Color(0x1F23_29FF);
+                theme.quote_background = Color(0xF7F8_FAFF);
+                theme.quote_text = Color(0x646A_73FF);
+                theme.border = Color(0xE5E6_EBFF);
+                theme.table_header = Color(0xF5F6_F7FF);
+                theme.accent = Color(0x3370_FFFF);
+                theme.quote_bar = Color(0xD0D3_D6FF);
+                theme.code_border = Color(0xE5E6_EBFF);
+                theme.list_marker = Color(0x646A_73FF);
+                theme.font_size = 15.0;
+                theme.line_height = 26.0;
+            }
             Self::Ink => {
                 theme.background = Color(0x1B1D_22FF);
                 theme.surface = Color(0x2023_2AFF);
@@ -64,6 +88,7 @@ impl ThemeKind {
     #[must_use]
     pub const fn token(self) -> &'static str {
         match self {
+            Self::Feishu => "feishu",
             Self::Ink => "ink",
             Self::Paper => "paper",
             Self::Contrast => "contrast",
@@ -74,6 +99,7 @@ impl ThemeKind {
     #[must_use]
     pub fn parse(token: &str) -> Option<Self> {
         match token {
+            "feishu" => Some(Self::Feishu),
             "ink" => Some(Self::Ink),
             "paper" => Some(Self::Paper),
             "contrast" => Some(Self::Contrast),
@@ -85,10 +111,33 @@ impl ThemeKind {
     #[must_use]
     pub const fn next(self) -> Self {
         match self {
-            Self::Ink => Self::Paper,
-            Self::Paper => Self::Contrast,
-            Self::Contrast => Self::Ink,
+            Self::Feishu => Self::Paper,
+            Self::Paper => Self::Ink,
+            Self::Ink => Self::Contrast,
+            Self::Contrast => Self::Feishu,
         }
+    }
+
+    /// Returns layout metrics for this theme.
+    #[must_use]
+    pub fn layout_style(self, font_size: f32, line_height: f32) -> ResolvedStyle {
+        let mut style = ResolvedStyle {
+            font_size,
+            line_height,
+            ..ResolvedStyle::default()
+        };
+        if self == Self::Feishu {
+            style.block_gap = 10.0;
+            style.heading_scale = [1.8, 1.5, 1.25, 1.15, 1.1, 1.05];
+            style.code_padding = 12.0;
+            style.quote_indent = 18.0;
+            style.list_indent = 22.0;
+            style.cell_padding = 8.0;
+            style.image_height = 180.0;
+            style.content_padding = 32.0;
+            style.max_content_width = 800.0;
+        }
+        style
     }
 }
 
@@ -110,9 +159,9 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            theme: ThemeKind::Ink,
-            font_size: 16.0,
-            line_height: 24.0,
+            theme: ThemeKind::Feishu,
+            font_size: 15.0,
+            line_height: 26.0,
             recent_files: Vec::new(),
             max_recent: 12,
         }
@@ -239,6 +288,7 @@ fn parse_string_array(value: &str) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{AppConfig, ThemeKind, parse_string_array};
+    use md_render::Color;
     use std::path::PathBuf;
 
     #[test]
@@ -262,5 +312,20 @@ mod tests {
             parse_string_array("[\"a\", \"b\"]"),
             vec![PathBuf::from("a"), PathBuf::from("b")]
         );
+    }
+    #[test]
+    fn feishu_theme_uses_document_style() {
+        let theme = ThemeKind::Feishu.render_theme();
+        assert_eq!(theme.background, Color(0xFFFF_FFFF));
+        assert_eq!(theme.text, Color(0x1F23_29FF));
+        assert_eq!(theme.accent, Color(0x3370_FFFF));
+        assert_eq!(theme.font_size, 15.0);
+        assert_eq!(theme.line_height, 26.0);
+        let style = ThemeKind::Feishu.layout_style(15.0, 26.0);
+        assert_eq!(style.max_content_width, 800.0);
+        assert_eq!(style.content_padding, 32.0);
+        assert_eq!(ThemeKind::default(), ThemeKind::Feishu);
+        assert_eq!(ThemeKind::Feishu.token(), "feishu");
+        assert_eq!(ThemeKind::parse("feishu"), Some(ThemeKind::Feishu));
     }
 }

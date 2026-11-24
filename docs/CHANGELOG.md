@@ -1470,3 +1470,13 @@
 - 布局新增 `caret_rect_with_affinity`，并验证边界两侧 caret 坐标不同。
 - 保留纵向最近行回退与行尾外侧 Upstream。
 - 313 个测试通过。
+
+## 2026-11-24 · 飞书文档主题
+
+- 新增默认 `Feishu` 主题：白底、深灰正文、蓝色光标/强调、浅灰代码块与表头、细边框、深灰列表标记。
+- 主题新增 `quote_bar`、`code_border`、`list_marker` 语义色，引用/代码/列表不再共用 accent。
+- Feishu 布局指标：15px/26px、内容宽 800、块间距 10、代码内边距 12、图片高度 180。
+- 主题切换同步字体与行高；默认配置改为 Feishu。
+- `Ctrl+Shift+T` 与标题栏主题按钮统一走 `cycle_theme`。
+- 新增主题测试与 `docs/THEMES.md`。
+- 314 个测试通过。

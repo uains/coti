@@ -172,7 +172,7 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                         3.0,
                         (block.rect.height() - 8.0).max(1.0),
                     ),
-                    color: theme.accent,
+                    color: theme.quote_bar,
                 },
             );
         }
@@ -208,7 +208,7 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                     PaintLayer::Decorations,
                     PaintCommand::FillRect {
                         rect,
-                        color: theme.border,
+                        color: theme.code_border,
                     },
                 );
             }
@@ -265,7 +265,7 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                                 theme.line_height,
                             ),
                             text: format!("{}.", index + 1),
-                            color: theme.accent,
+                            color: theme.list_marker,
                             font_size: theme.font_size,
                             font_weight: 400.0,
                             mono: false,
@@ -281,7 +281,7 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                                 4.0,
                                 4.0,
                             ),
-                            color: theme.accent,
+                            color: theme.list_marker,
                         },
                     );
                 }
