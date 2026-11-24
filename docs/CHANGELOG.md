@@ -1105,3 +1105,13 @@
 - **7.5 增量**：`LayoutEngine` 叶级 line cache、invalidate、全量/增量逐字段相等、5000 次编辑等价测试、±1 屏可见范围。
 - `md-layout` 19 个测试；全 Workspace 261 个测试通过。
 - 已知增量：精确 CJK 禁则/悬挂空白、图片内在尺寸、表格列宽策略、滚动锚定与完整虚拟化。
+
+## 2026-11-24 · 阶段 8：`md-render` 渲染核心
+
+- **Paint 模型**：`Theme`、`Color`、`PaintLayer`、`PaintCommand`、`PaintPlan`；块背景、选区、Glyph、Image、Caret 分层排序。
+- **Shaping**：`Shaper`、`FakeShaper`、`ShapedGlyph`/`ShapedRun`、`ShapingCache`。
+- **输入适配**：Key → Intent、鼠标点击/拖动 → DocPos、ScrollState、CaretBlink。
+- **资源**：ImageState、ResourceCache、version 与占位状态。
+- **View**：`RenderView` 持有 layout/theme/scroll/blink/input，paint 不修改 Document。
+- `md-render` 12 个测试；全 Workspace 271 个测试通过。
+- **未接入**：真实 GPUI 窗口/元素/paint 适配；阶段 8 按“GPUI-ready 渲染核心”验收，平台适配与真实窗口验证留待阶段 9 装配。
