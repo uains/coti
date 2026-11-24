@@ -181,18 +181,6 @@ impl Editor {
         self.insert_text(&committed)
     }
 
-    pub(crate) fn apply_history_operations(
-        &mut self,
-        operations: Vec<Operation>,
-    ) -> EditorResult<()> {
-        let mut transaction = Transaction::new(self.document_revision());
-        for operation in operations {
-            transaction.push(operation);
-        }
-        transaction.apply(self)?;
-        Ok(())
-    }
-
     pub(crate) fn commit(&mut self, transaction: Transaction) -> EditorResult<ChangeSet> {
         let changes = transaction.apply(self)?;
         if let Some(existing) = self.pending_change.as_mut() {
@@ -334,6 +322,11 @@ impl Editor {
         self.document.restore(snapshot);
     }
 
+    pub(crate) fn restore_full_document(&mut self, document: Document) {
+        self.document = document;
+        self.document_revision += 1;
+    }
+
     pub(crate) fn bump_document_revision(&mut self) {
         self.document_revision += 1;
     }
@@ -395,9 +388,10 @@ impl Editor {
     pub fn dispatch(&mut self, intent: Intent) -> EditorResult<RuleId> {
         let before_selection = self.selection.clone();
         let before_revision = self.document_revision();
+        let before_document = self.document.clone();
         self.pending_change = None;
         let rule_id = self.dispatch_inner(&intent)?;
-        self.record_history(before_selection, before_revision, &intent);
+        self.record_history(before_selection, before_revision, before_document, &intent);
         Ok(rule_id)
     }
 
@@ -405,6 +399,7 @@ impl Editor {
         &mut self,
         before_selection: SelectionSet,
         before_revision: u64,
+        before_document: Document,
         intent: &Intent,
     ) {
         let Some(change) = self.pending_change.take() else {
@@ -432,6 +427,8 @@ impl Editor {
             change,
             before_selection,
             self.selection.clone(),
+            before_document,
+            self.document.clone(),
             group,
             before_state,
             before_state + 1,

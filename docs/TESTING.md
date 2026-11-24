@@ -107,6 +107,6 @@ cargo bench
 - 5.1 已完成：Move 规则、grapheme/Atom/跨叶光标。
 - 5.2～5.3 已完成：Operation/inverse、Transaction 快照回滚、ChangeSet。
 - 5.4～5.5 第一批已完成：PositionMapping、InsertText/DeleteBackward 规则。
-- 当前 `md-editor` 89 个单元测试 + 4 个属性测试；`md-layout` 19 个测试；`md-render` 12 个测试；`md-app` 20 个测试；总计 287 个测试通过。
+- 当前 `md-editor` 89 unit + 4 property + 2 undo-stability；`md-document` +1 随机不变式；`md-markdown` +1 模型闭合；`md-layout` 19 + 2 ignored scale；`md-render` 12；`md-app` 20；总计 291 个测试通过。
 - Enter/DeleteForward/DeleteRange/Tab/List/Quote/Table 规则尚未完成；当前不对阶段 5 做整体验收。
 

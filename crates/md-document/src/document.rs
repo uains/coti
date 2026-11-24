@@ -651,6 +651,36 @@ impl Document {
         false
     }
 
+    /// Returns whether two documents have the same semantic block tree.
+    ///
+    /// Arena slot ids, free lists, source hints, and runtime generations are
+    /// ignored. This is intended for undo/redo and round-trip assertions.
+    #[must_use]
+    pub fn content_eq(&self, other: &Self) -> bool {
+        fn same_children(left: &Document, right: &Document, a: &[BlockId], b: &[BlockId]) -> bool {
+            a.len() == b.len()
+                && a.iter().zip(b).all(|(left_id, right_id)| {
+                    let Some(left_kind) = left.kind(*left_id) else {
+                        return false;
+                    };
+                    let Some(right_kind) = right.kind(*right_id) else {
+                        return false;
+                    };
+                    if left_kind != right_kind {
+                        return false;
+                    }
+                    match (left.children(*left_id), right.children(*right_id)) {
+                        (Some(left_children), Some(right_children)) => {
+                            same_children(left, right, left_children, right_children)
+                        }
+                        (None, None) => true,
+                        _ => false,
+                    }
+                })
+        }
+        same_children(self, other, self.root_children(), other.root_children())
+    }
+
     /// Validates the whole document tree and the arena.
     ///
     /// # Errors

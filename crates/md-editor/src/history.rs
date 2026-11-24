@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::mem::size_of_val;
 use std::time::{Duration, Instant};
 
-use md_document::{BlockId, SelectionSet};
+use md_document::{BlockId, Document, SelectionSet};
 
 use crate::{ChangeSet, Editor, EditorResult, Operation};
 
@@ -52,6 +52,10 @@ pub struct HistoryEntry {
     pub forward: Vec<Operation>,
     /// Inverse operations in forward order; undo reverses them.
     pub inverse: Vec<Operation>,
+    /// Document snapshot before the change.
+    pub before_document: Document,
+    /// Document snapshot after the change.
+    pub after_document: Document,
     /// Selection before the change.
     pub before_selection: SelectionSet,
     /// Selection after the change.
@@ -73,18 +77,25 @@ pub struct HistoryEntry {
 impl HistoryEntry {
     /// Builds an entry from a committed change set.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_change(
         change: ChangeSet,
         before_selection: SelectionSet,
         after_selection: SelectionSet,
+        before_document: Document,
+        after_document: Document,
         group: Option<HistoryGroup>,
         before_state: u64,
         after_state: u64,
     ) -> Self {
-        let estimated_bytes = estimate_change(&change);
+        let estimated_bytes = estimate_change(&change)
+            .saturating_add(before_document.block_count() * 256)
+            .saturating_add(after_document.block_count() * 256);
         Self {
             forward: change.forward,
             inverse: change.inverses,
+            before_document,
+            after_document,
             before_selection,
             after_selection,
             group,
@@ -182,6 +193,7 @@ impl History {
             previous.forward.extend(entry.forward);
             previous.inverse = inverses;
             previous.after_selection = entry.after_selection;
+            previous.after_document = entry.after_document;
             previous.revision = entry.revision;
             previous.timestamp = entry.timestamp;
             previous.after_state = entry.after_state;
@@ -207,14 +219,9 @@ impl History {
         let Some(entry) = self.undo.pop_back() else {
             return Ok(false);
         };
-        let mut operations = entry.inverse.clone();
-        operations.reverse();
-        if let Err(error) = editor.apply_history_operations(operations) {
-            self.undo.push_back(entry);
-            return Err(error);
-        }
-        self.total_bytes = self.total_bytes.saturating_sub(entry.estimated_bytes);
+        editor.restore_full_document(entry.before_document.clone());
         editor.set_selection(entry.before_selection.clone())?;
+        self.total_bytes = self.total_bytes.saturating_sub(entry.estimated_bytes);
         self.current_state = entry.before_state;
         self.redo.push(entry);
         Ok(true)
@@ -229,12 +236,9 @@ impl History {
         let Some(entry) = self.redo.pop() else {
             return Ok(false);
         };
-        if let Err(error) = editor.apply_history_operations(entry.forward.clone()) {
-            self.redo.push(entry);
-            return Err(error);
-        }
-        self.total_bytes = self.total_bytes.saturating_add(entry.estimated_bytes);
+        editor.restore_full_document(entry.after_document.clone());
         editor.set_selection(entry.after_selection.clone())?;
+        self.total_bytes = self.total_bytes.saturating_add(entry.estimated_bytes);
         self.current_state = entry.after_state;
         self.undo.push_back(entry);
         Ok(true)

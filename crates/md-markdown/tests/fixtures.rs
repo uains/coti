@@ -92,3 +92,21 @@ fn every_fixture_canonical_output_is_stable() {
         );
     }
 }
+
+#[test]
+fn canonical_document_is_isomorphic_after_reparse() {
+    for path in fixture_paths() {
+        let source = fs::read_to_string(&path).expect("fixture should be valid UTF-8");
+        let mut document = parse(&source)
+            .unwrap_or_else(|error| panic!("{}: parse failed: {error}", path.display()));
+        document.document_mut();
+        let canonical = document.serialize();
+        let reparsed = parse(&canonical)
+            .unwrap_or_else(|error| panic!("{}: reparse failed: {error}", path.display()));
+        assert!(
+            document.document().content_eq(reparsed.document()),
+            "{}: canonical model differs after reparse",
+            path.display()
+        );
+    }
+}

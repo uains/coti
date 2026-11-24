@@ -1141,3 +1141,15 @@
 - **滚动**：`scroll_to_caret`、打字机居中。
 - `md-app` 13 unit + 5 flow + 2 smoke；全 Workspace 287 个测试通过。
 - **未完成**：真实 GPUI 大纲/搜索高亮/折叠交互/命令面板/状态栏 UI；图片异步加载与表格 UI。
+
+## 2026-11-24 · 阶段 11：正确性、规模门禁与 Release 配置
+
+- **AC-03 Undo 完备性**：1000 组随机序列 × 24 Intents；全部 Undo 恢复初始内容/编辑前选区，全部 Redo 恢复最终内容。
+- **AC-04 不变式**：1000 组随机 Document 操作，每步 `validate()`。
+- **AC-02 模型闭合**：200 夹具 canonical 输出重新 parse 后 `Document::content_eq`。
+- **AC-05 增量等价**：已有 5000 次编辑测试。
+- **规模门禁**：100k 字符段落、10k 段落布局 `#[ignore]` 性能门禁。
+- **Release profile**：thin LTO、单 codegen unit、strip symbols。
+- Undo/Redo 改为 Document 快照权威，修复 JoinBlocks inverse 无法恢复 BlockId 的 redo 失效。
+- 全 Workspace 291 个测试通过。
+- **未完成**：真实 200 篇外部语料、全部 RuleId 覆盖、P95 性能测量、跨平台安装包/图标/签名、真实 GPUI 壳层。
