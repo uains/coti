@@ -158,6 +158,14 @@ pub enum BlockKind {
         children: Vec<BlockId>,
     },
 
+    /// A footnote definition containing block-level children.
+    FootnoteDefinition {
+        /// Footnote label.
+        label: String,
+        /// Child block ids.
+        children: Vec<BlockId>,
+    },
+
     /// A table containing rows.
     Table {
         /// Column alignments.
@@ -208,6 +216,7 @@ impl BlockKind {
             Self::Quote(_)
                 | Self::List { .. }
                 | Self::ListItem { .. }
+                | Self::FootnoteDefinition { .. }
                 | Self::Table { .. }
                 | Self::TableRow { .. }
         )
@@ -220,6 +229,7 @@ impl BlockKind {
             Self::Quote(children) => Some(children),
             Self::List { items, .. } => Some(items),
             Self::ListItem { children, .. } => Some(children),
+            Self::FootnoteDefinition { children, .. } => Some(children),
             Self::Table { rows, .. } => Some(rows),
             Self::TableRow { cells, .. } => Some(cells),
             _ => None,
@@ -233,6 +243,7 @@ impl BlockKind {
             Self::Quote(children) => Some(children),
             Self::List { items, .. } => Some(items),
             Self::ListItem { children, .. } => Some(children),
+            Self::FootnoteDefinition { children, .. } => Some(children),
             Self::Table { rows, .. } => Some(rows),
             Self::TableRow { cells, .. } => Some(cells),
             _ => None,
@@ -324,6 +335,7 @@ impl BlockKind {
             Self::Quote(_) => "quote",
             Self::List { .. } => "list",
             Self::ListItem { .. } => "list_item",
+            Self::FootnoteDefinition { .. } => "footnote_definition",
             Self::Table { .. } => "table",
             Self::TableRow { .. } => "table_row",
             Self::ThematicBreak => "thematic_break",
@@ -345,6 +357,7 @@ impl BlockKind {
                 | Self::FrontMatter(_)
                 | Self::Quote(_)
                 | Self::List { .. }
+                | Self::FootnoteDefinition { .. }
                 | Self::Table { .. }
                 | Self::ThematicBreak
                 | Self::ImageBlock { .. }
@@ -358,7 +371,9 @@ impl BlockKind {
             Self::List { .. } => matches!(self, Self::ListItem { .. }),
             Self::Table { .. } => matches!(self, Self::TableRow { .. }),
             Self::TableRow { .. } => matches!(self, Self::TableCell { .. }),
-            Self::Quote(_) | Self::ListItem { .. } => self.is_block_level(),
+            Self::Quote(_) | Self::ListItem { .. } | Self::FootnoteDefinition { .. } => {
+                self.is_block_level()
+            }
             _ => false,
         }
     }
@@ -387,6 +402,11 @@ impl BlockKind {
             Self::Quote(children) if children.is_empty() => Err(DocumentError::Invariant {
                 message: "quote must contain at least one child".to_owned(),
             }),
+            Self::FootnoteDefinition { children, .. } if children.is_empty() => {
+                Err(DocumentError::Invariant {
+                    message: "footnote definition must contain at least one child".to_owned(),
+                })
+            }
             Self::List { items, .. } if items.is_empty() => Err(DocumentError::Invariant {
                 message: "list must contain at least one item".to_owned(),
             }),

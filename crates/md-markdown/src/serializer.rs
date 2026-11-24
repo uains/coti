@@ -46,9 +46,47 @@ fn write_block(document: &Document, id: BlockId, output: &mut String) {
             output.push_str(&fence_text);
             output.push_str("\n\n");
         }
-        BlockKind::HtmlBlock(text) | BlockKind::MathBlock(text) | BlockKind::FrontMatter(text) => {
+        BlockKind::HtmlBlock(text) => {
             output.push_str(text.as_str());
             if !text.as_str().ends_with('\n') {
+                output.push('\n');
+            }
+            output.push('\n');
+        }
+        BlockKind::MathBlock(text) => {
+            let trimmed = text.as_str().trim_matches('\n');
+            output.push_str("$$\n");
+            output.push_str(trimmed);
+            if !trimmed.is_empty() {
+                output.push('\n');
+            }
+            output.push_str("$$\n\n");
+        }
+        BlockKind::FrontMatter(text) => {
+            output.push_str("---\n");
+            output.push_str(text.as_str());
+            if !text.as_str().ends_with('\n') {
+                output.push('\n');
+            }
+            output.push_str("---\n\n");
+        }
+        BlockKind::FootnoteDefinition { label, children } => {
+            let mut inner = String::new();
+            for child in children {
+                write_block(document, *child, &mut inner);
+            }
+            let trimmed = inner.trim_end_matches('\n');
+            output.push_str("[^");
+            output.push_str(label);
+            output.push_str("]: ");
+            for (index, line) in trimmed.lines().enumerate() {
+                if index > 0 {
+                    output.push_str("    ");
+                }
+                output.push_str(line);
+                output.push('\n');
+            }
+            if trimmed.is_empty() {
                 output.push('\n');
             }
             output.push('\n');

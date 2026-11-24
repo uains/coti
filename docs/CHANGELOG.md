@@ -798,3 +798,46 @@
 ### 下一步
 
 - 4.4：生成 200+ Markdown 夹具，建立 AC-01 逐字节保真测试与 parser/serializer 回归集。
+
+## 2026-11-24 · 阶段 4 / 步骤 4.4：200+ Markdown 夹具与 AC-01 保真测试
+
+**状态：** 已完成。
+
+### 变更
+
+- 在 `crates/md-markdown/tests/fixtures/markdown/` 生成 **200 个 Markdown 夹具**：
+  - 20 类模板 × 10 个变体。
+  - 覆盖标题、段落、强调、列表、任务列表、嵌套列表、引用、代码围栏/缩进代码、表格、链接、图片、Frontmatter、脚注、数学、HTML、中文、Emoji、组合字符、硬/软换行、Setext 标题、分隔线、转义、混合结构。
+- 新增 `crates/md-markdown/tests/fixtures.rs`：
+  - 夹具数量 ≥200。
+  - 每个夹具 `parse → validate → serialize` 逐字节相等。
+  - dirty canonical 输出必须能重新 parse 且 validate。
+  - dirty canonical 二次序列化必须稳定（幂等）。
+- 新增 `BlockKind::FootnoteDefinition { label, children }`：
+  - Parser 不再把脚注定义降级为 Quote。
+  - Serializer 输出 `[^label]:` 并缩进子块。
+- MathBlock dirty 输出使用 `$$` 包裹并裁剪首尾换行；FrontMatter 输出恢复 `---` 分隔符。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：145 个测试通过。
+  - `md-markdown` 10 个单元测试 + 4 个夹具集成测试。
+- 200 个夹具全部通过：
+  - pristine 逐字节相等。
+  - dirty canonical reparse + validate。
+  - dirty canonical 稳定性。
+- `./scripts/check-layering.ps1`：通过。
+
+### 设计说明
+
+- 200 篇为合成夹具，不是外部真实语料；AC-01 的“真实 Markdown”要求仍需在阶段 11 前补充真实语料复验。
+- canonical 稳定性目前覆盖 200 个夹具，但 `parse(serialize(doc)) ≅ doc` 的结构同构断言尚未实现；当前以 reparse + validate + 二次序列化稳定作为过渡门槛。
+- Dirty 路径仍统一规范化输出，没有利用 `SourceHint` 的 pristine 子块与 StyleHints；逐块保真优化留到 Editor 能准确标记脏节点之后。
+- inline image 的 alt 仍未保留；阶段 4 的夹具不依赖该字段。
+- DefinitionList 仍映射为 Quote 容器；属于已知模型近似。
+
+### 下一步
+
+- 阶段 4 汇总验收，更新 `IMPLEMENTATION.md`、`TESTING.md`，等待确认后进入阶段 5（`md-editor`）。

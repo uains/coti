@@ -181,7 +181,13 @@ impl Builder {
                 },
                 start,
             ),
-            Tag::FootnoteDefinition(_) => self.start_container(BlockKind::Quote(vec![]), start),
+            Tag::FootnoteDefinition(label) => self.start_container(
+                BlockKind::FootnoteDefinition {
+                    label: label.to_string(),
+                    children: vec![],
+                },
+                start,
+            ),
             Tag::DefinitionList => self.start_container(BlockKind::Quote(vec![]), start),
             Tag::DefinitionListTitle => {
                 self.start_inline(BlockKind::Paragraph(InlineContent::new()), start)
@@ -325,6 +331,13 @@ impl Builder {
         Ok(true)
     }
 
+    fn close_active_inline(&mut self, end: usize) -> MarkdownResult<()> {
+        if self.inline.is_some() {
+            self.finish_inline(end)?;
+        }
+        Ok(())
+    }
+
     fn finish_container(&mut self, end: usize) -> MarkdownResult<()> {
         if self.inline.is_some() {
             self.finish_inline(end)?;
@@ -343,6 +356,7 @@ impl Builder {
     }
 
     fn start_inline(&mut self, kind: BlockKind, start: usize) -> MarkdownResult<()> {
+        self.close_active_inline(start)?;
         let id = self.append_leaf(kind, start)?;
         self.inline = Some(InlineBuilder::new());
         self.open.push(OpenBlock { id, start });
@@ -366,6 +380,7 @@ impl Builder {
     }
 
     fn start_container(&mut self, kind: BlockKind, start: usize) -> MarkdownResult<()> {
+        self.close_active_inline(start)?;
         let parent = self.containers.last().copied();
         let id = self.document.append_block(parent, kind)?;
         self.containers.push(id);
@@ -374,6 +389,7 @@ impl Builder {
     }
 
     fn start_leaf(&mut self, kind: BlockKind, start: usize) -> MarkdownResult<()> {
+        self.close_active_inline(start)?;
         let id = self.append_leaf(kind, start)?;
         self.open.push(OpenBlock { id, start });
         Ok(())
@@ -405,9 +421,9 @@ impl Builder {
             return Ok(());
         };
         let needs_child = match kind {
-            BlockKind::Quote(children) | BlockKind::ListItem { children, .. } => {
-                children.is_empty()
-            }
+            BlockKind::Quote(children)
+            | BlockKind::ListItem { children, .. }
+            | BlockKind::FootnoteDefinition { children, .. } => children.is_empty(),
             _ => false,
         };
         if needs_child {
