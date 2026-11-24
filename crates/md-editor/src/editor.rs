@@ -174,6 +174,11 @@ impl Editor {
             return Ok(rule_id);
         }
 
+        if rule_id == RuleId::DELETE_FORWARD {
+            self.delete_forward()?;
+            return Ok(rule_id);
+        }
+
         if rule_id == RuleId::MOVE_LEFT
             || rule_id == RuleId::MOVE_RIGHT
             || rule_id == RuleId::MOVE_DOC_START
@@ -191,6 +196,48 @@ impl Editor {
         Err(EditorError::InvalidIntent {
             message: format!("rule {rule_id} has no executor"),
         })
+    }
+
+    fn delete_forward(&mut self) -> EditorResult<()> {
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return Err(EditorError::InvalidIntent {
+                message: "delete forward requires a selection".to_owned(),
+            });
+        };
+        if !matches!(selection.kind, SelectionKind::Range) {
+            return Err(EditorError::InvalidIntent {
+                message: "delete forward only supports range selections".to_owned(),
+            });
+        }
+
+        let (from, to) = if selection.is_collapsed() {
+            let Some(next) = self
+                .document
+                .index()
+                .next_cursor(&self.document, selection.head.pos)
+            else {
+                return Ok(());
+            };
+            (selection.head.pos, next)
+        } else {
+            (selection.start(), selection.end())
+        };
+
+        let (block_id, range) = self.primary_local_range(from, to)?;
+        let operation = Operation::ReplaceText {
+            block_id,
+            range,
+            text: String::new(),
+            marks: Marks::plain(),
+        };
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(operation);
+        transaction.apply(self)?;
+
+        self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(())
     }
 
     fn insert_newline(&mut self) -> EditorResult<()> {
@@ -709,6 +756,40 @@ mod tests {
         let mut editor = editor_at(0);
         editor.dispatch(Intent::InsertNewline).unwrap();
         assert_eq!(editor.document().root_children().len(), 4);
+        assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn delete_forward_rule_removes_next_grapheme() {
+        let mut editor = editor_at(1);
+        let rule = editor.dispatch(Intent::DeleteForward).unwrap();
+        assert_eq!(rule, RuleId::DELETE_FORWARD);
+        assert_eq!(editor.document_revision(), 1);
+        let block = editor.document().root_children()[1];
+        assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(3));
+        assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn delete_forward_at_document_end_is_noop() {
+        let mut editor = editor_at(7);
+        editor.dispatch(Intent::DeleteForward).unwrap();
+        assert_eq!(editor.document_revision(), 0);
+        assert_eq!(head(&editor), DocPos::new(7));
+    }
+
+    #[test]
+    fn delete_forward_removes_selected_range() {
+        let mut editor = editor_at(2);
+        editor
+            .set_selection(SelectionSet::new(Selection::range(
+                Anchor::new(DocPos::new(1), Affinity::Upstream),
+                Anchor::new(DocPos::new(2), Affinity::Upstream),
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteForward).unwrap();
+        let block = editor.document().root_children()[1];
+        assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(3));
         assert_eq!(head(&editor), DocPos::new(1));
     }
 }

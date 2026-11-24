@@ -983,3 +983,10 @@
 
 - Enter 仅支持折叠 Range 与 Inline 叶；非折叠选区、Heading/List/Quote/Table 专用规则未实现。
 - 跨块 DeleteForward/DeleteRange/Tab 仍待实现。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第三批）：DeleteForward
+
+- 新增 `RuleId::DELETE_FORWARD` 与 guard。
+- 折叠光标删除后一个 grapheme/atom；非折叠 Range 删除整个范围。
+- 跨块删除仍明确拒绝。
+- `md-editor` 50 个测试；全 Workspace 199 个测试通过。

@@ -24,6 +24,8 @@ impl RuleId {
     pub const DELETE_BACKWARD: Self = Self(0x0202);
     /// Split the current block at the caret.
     pub const ENTER: Self = Self(0x0203);
+    /// Delete forward by grapheme/atom.
+    pub const DELETE_FORWARD: Self = Self(0x0204);
 
     /// Returns the numeric id.
     #[must_use]
@@ -116,6 +118,10 @@ fn enter(ctx: &Ctx<'_>) -> bool {
     matches!(ctx.intent, Intent::InsertNewline)
 }
 
+fn delete_forward(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::DeleteForward)
+}
+
 static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::MOVE_LEFT,
@@ -144,6 +150,10 @@ static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::ENTER,
         guard: enter,
+    },
+    Rule {
+        id: RuleId::DELETE_FORWARD,
+        guard: delete_forward,
     },
 ];
 
