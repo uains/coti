@@ -98,6 +98,8 @@ pub struct CotiView {
     search_marked: String,
     palette_marked: String,
     caret_visible: bool,
+    last_input: std::time::Instant,
+    last_blink: std::time::Instant,
     blink_task: Task<()>,
 }
 
@@ -146,7 +148,7 @@ impl CotiView {
     /// Creates a view for an application state.
     #[must_use]
     pub fn new(state: AppState, viewport: Size, cx: &mut Context<Self>) -> Self {
-        Self {
+        let mut this = Self {
             window: AppWindow::new(state, viewport),
             focus_handle: cx.focus_handle(),
             dragging: false,
@@ -163,9 +165,13 @@ impl CotiView {
             palette_active: false,
             search_marked: String::new(),
             palette_marked: String::new(),
-            caret_visible: true,
+            caret_visible: false,
+            last_input: std::time::Instant::now(),
+            last_blink: std::time::Instant::now(),
             blink_task: Task::ready(()),
-        }
+        };
+        this.blink_task = Self::spawn_blink(cx);
+        this
     }
 
     /// Creates a view from a config.
@@ -267,26 +273,47 @@ impl CotiView {
 
     fn stop_blink(&mut self) {
         self.caret_visible = false;
-        self.blink_task = Task::ready(());
     }
 
-    fn reset_blink(&mut self, cx: &mut Context<Self>) {
+    fn reset_blink(&mut self, _cx: &mut Context<Self>) {
         self.caret_visible = true;
-        self.blink_task = cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(Duration::from_secs(1)).await;
+        self.last_input = std::time::Instant::now();
+        self.last_blink = std::time::Instant::now();
+    }
+
+    fn spawn_blink(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
             loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
                 let result = this.update(cx, |this, cx| {
-                    this.caret_visible = !this.caret_visible;
-                    cx.notify();
+                    let active = this.editor_active || this.search_active || this.palette_active;
+                    if !active {
+                        if this.caret_visible {
+                            this.caret_visible = false;
+                            cx.notify();
+                        }
+                        return;
+                    }
+                    if this.last_input.elapsed() < Duration::from_secs(1) {
+                        if !this.caret_visible {
+                            this.caret_visible = true;
+                            cx.notify();
+                        }
+                        return;
+                    }
+                    if this.last_blink.elapsed() >= Duration::from_millis(500) {
+                        this.caret_visible = !this.caret_visible;
+                        this.last_blink = std::time::Instant::now();
+                        cx.notify();
+                    }
                 });
                 if result.is_err() {
                     break;
                 }
-                cx.background_executor()
-                    .timer(Duration::from_millis(500))
-                    .await;
             }
-        });
+        })
     }
 
     fn activate_search(&mut self, cx: &mut Context<Self>) {
