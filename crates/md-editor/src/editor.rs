@@ -689,6 +689,78 @@ impl Editor {
         Ok(())
     }
 
+    fn remove_empty_list_item(&mut self, block_id: md_document::BlockId) -> EditorResult<bool> {
+        let Some(item) = self.document.parent(block_id) else {
+            return Ok(false);
+        };
+        if !matches!(self.document.kind(item), Some(BlockKind::ListItem { .. }))
+            || self
+                .document
+                .children(item)
+                .is_none_or(|children| children.len() != 1)
+        {
+            return Ok(false);
+        }
+        let empty = self
+            .document
+            .kind(block_id)
+            .and_then(BlockKind::inline_content)
+            .is_none_or(|content| content.plain_text().is_empty());
+        if !empty {
+            return Ok(false);
+        }
+        let Some(list) = self.document.parent(item) else {
+            return Ok(false);
+        };
+        let Some(items) = self.document.children(list) else {
+            return Ok(false);
+        };
+        let items = items.to_vec();
+        let Some(item_index) = items.iter().position(|id| *id == item) else {
+            return Ok(false);
+        };
+
+        let index = self.document.index();
+        let mut target = None;
+        if item_index > 0 {
+            for leaf in index.leaf_order().iter().rev() {
+                if self.document.is_ancestor(items[item_index - 1], *leaf)
+                    && let Some(leaf) = index.leaf_index(*leaf)
+                    && let Some((start, len)) = index.leaf_start(leaf).zip(index.leaf_len(leaf))
+                {
+                    target = Some(DocPos::new(start + len));
+                    break;
+                }
+            }
+        } else if items.len() > 1 {
+            if let Some(leaf) = index
+                .leaf_order()
+                .iter()
+                .find(|leaf| self.document.is_ancestor(items[1], **leaf))
+                && let Some(leaf) = index.leaf_index(*leaf)
+            {
+                target = index.leaf_start(leaf).map(DocPos::new);
+            }
+        } else if let Some(leaf) = index
+            .leaf_order()
+            .iter()
+            .find(|leaf| self.document.is_ancestor(list, **leaf))
+            && let Some(leaf) = index.leaf_index(*leaf)
+        {
+            target = index.leaf_start(leaf).map(DocPos::new);
+        }
+        let target = target.unwrap_or(DocPos::ZERO);
+
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::RemoveListItem { id: item });
+        self.commit(transaction)?;
+        let pos = DocPos::new(target.get().min(self.document.index().doc_length()));
+        self.selection = SelectionSet::new(Selection::collapsed(pos, Affinity::Upstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(true)
+    }
+
     fn join_previous_block(&mut self, current: md_document::BlockId) -> EditorResult<bool> {
         let index = self.document.index();
         let Some(current_leaf) = index.leaf_index(current) else {
@@ -1270,17 +1342,51 @@ impl Editor {
                 return Ok(());
             }
 
+            let boundary_previous =
+                if let Some(hit) = index.leaf_at(selection.head.pos.get().saturating_sub(1)) {
+                    let leaf_len = index.leaf_len(hit.leaf_index).unwrap_or(0);
+                    let local = self
+                        .document
+                        .kind(hit.block_id)
+                        .and_then(|kind| match kind {
+                            BlockKind::Paragraph(content)
+                            | BlockKind::TableCell { content }
+                            | BlockKind::Heading { content, .. } => content.prev_offset(leaf_len),
+                            BlockKind::CodeBlock { text, .. }
+                            | BlockKind::HtmlBlock(text)
+                            | BlockKind::MathBlock(text)
+                            | BlockKind::FrontMatter(text) => text
+                                .prev_grapheme_boundary(TextOffset::new(leaf_len))
+                                .map(|offset| offset.get()),
+                            _ => None,
+                        });
+                    local
+                        .zip(index.leaf_start(hit.leaf_index))
+                        .map(|(local, start)| DocPos::new(start + local))
+                } else {
+                    None
+                };
+
+            if resolved.offset == 0 && self.remove_empty_list_item(resolved.block_id)? {
+                return Ok(());
+            }
+
             if resolved.offset == 0 && self.join_previous_block(resolved.block_id)? {
                 return Ok(());
             }
 
-            let Some(previous) = self
+            let Some(mut previous) = self
                 .document
                 .index()
                 .prev_cursor(&self.document, selection.head.pos)
             else {
                 return Ok(());
             };
+            if previous == selection.head.pos
+                && let Some(boundary) = boundary_previous
+            {
+                previous = boundary;
+            }
             (previous, selection.head.pos)
         } else {
             self.delete_range(selection.start(), selection.end())?;
@@ -1992,6 +2098,33 @@ mod tests {
                 .any(|run| matches!(run.atom_kind(), Some(md_document::AtomKind::HardBreak)))
         );
         assert_eq!(editor.document().root_children().len(), 2);
+    }
+
+    #[test]
+    fn backspace_deletes_last_char_at_block_boundary() {
+        let source = "abc\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection =
+            SelectionSet::new(Selection::collapsed(DocPos::new(3), Affinity::Downstream));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.starts_with("ab\n"), "unexpected output: {output:?}");
+    }
+
+    #[test]
+    fn backspace_removes_empty_last_list_item() {
+        let source = "- a\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(parsed.document().index().doc_length()),
+            Affinity::Downstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert_eq!(editor.document().root_children().len(), 1);
+        assert!(editor.document().validate().is_ok());
     }
 
     #[test]

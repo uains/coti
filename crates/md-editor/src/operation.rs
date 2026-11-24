@@ -51,6 +51,11 @@ pub enum Operation {
         /// Paragraph content for the new item.
         content: InlineContent,
     },
+    /// Removes an empty list item; a sole item is replaced by its paragraph.
+    RemoveListItem {
+        /// List item to remove.
+        id: BlockId,
+    },
     /// Removes a leaf block.
     RemoveBlock {
         /// Target block.
@@ -200,6 +205,32 @@ impl Operation {
                     inverse: Self::RemoveBlock { id: item },
                     affected: vec![item, para],
                 })
+            }
+            Self::RemoveListItem { id } => {
+                let list = document.parent(*id).ok_or_else(|| stale(*id))?;
+                let items = document.children(list).unwrap_or(&[]).to_vec();
+                if !items.contains(id) {
+                    return Err(EditorError::InvalidIntent {
+                        message: "list item is not linked from its list".to_owned(),
+                    });
+                }
+                if items.len() > 1 {
+                    document.remove_block(*id)?;
+                    Ok(AppliedOperation {
+                        inverse: Self::RemoveBlock { id: *id },
+                        affected: vec![list],
+                    })
+                } else if document.parent(list).is_none() {
+                    document.remove_block(list)?;
+                    Ok(AppliedOperation {
+                        inverse: Self::RemoveBlock { id: list },
+                        affected: vec![list],
+                    })
+                } else {
+                    Err(EditorError::InvalidIntent {
+                        message: "cannot remove the only item of a nested list".to_owned(),
+                    })
+                }
             }
             Self::RemoveBlock { id } => {
                 let node = document.node(*id).ok_or_else(|| stale(*id))?;
