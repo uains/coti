@@ -28,6 +28,35 @@ use crate::config::AppConfig;
 
 const TITLEBAR_HEIGHT: f32 = 36.0;
 
+fn start_window_drag(window: &Window) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = window;
+        start_window_drag_native();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        window.start_window_move();
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+fn start_window_drag_native() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, HTCAPTION, SendMessageW, WM_NCLBUTTONDOWN,
+    };
+    unsafe {
+        if let hwnd = GetForegroundWindow()
+            && !hwnd.is_null()
+        {
+            ReleaseCapture();
+            SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
+        }
+    }
+}
+
 struct Assets {
     base: PathBuf,
 }
@@ -626,7 +655,7 @@ impl Render for CotiView {
             .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|_, _, window, _| window.start_window_move()),
+                cx.listener(|_, _, window, _| start_window_drag(window)),
             );
 
         let menu_items = commands::menus();
@@ -641,7 +670,7 @@ impl Render for CotiView {
             .border_color(border)
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|_, _, window, _| window.start_window_move()),
+                cx.listener(|_, _, window, _| start_window_drag(window)),
             );
         for (index, menu) in menu_items.iter().enumerate() {
             let active = self.menu_open == Some(index);

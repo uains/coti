@@ -1306,3 +1306,13 @@
 - 标题栏按钮改用 assets/icons SVG：search、panel-left-open/close、command、palette、minimize、maximize、x。
 - GPUI AssetSource 加载 assets/。
 - 293 个测试通过；Release 16.9 MB。
+
+## 2026-11-24 · 修复标题栏拖动、搜索、全选、IME 光标与 SVG 图标
+
+- 标题栏拖动：Windows 后端 `start_window_move` 为 no-op，改用 Win32 `ReleaseCapture + WM_NCLBUTTONDOWN/HTCAPTION`；实物拖动验证窗口从 (719,517) 移到 (492,122)。
+- 搜索不再关闭大纲。
+- 搜索文本只写一次，移除 EntityInputHandler 重复写入。
+- Ctrl+A 全选。
+- IME 预编辑：包含 composition 文本，隐藏原 caret，在预编辑末尾绘制新 caret。
+- 标题栏按钮使用 assets/icons SVG；配置 GPUI AssetSource。
+- 293 个测试通过。
