@@ -566,6 +566,29 @@ impl InlineContent {
         self.insert_run(index, Run::atom(kind, marks))
     }
 
+    /// Inserts an atom at a local content offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invariant error for an invalid offset.
+    pub fn insert_atom_at(
+        &mut self,
+        offset: usize,
+        kind: AtomKind,
+        marks: Marks,
+    ) -> DocumentResult<()> {
+        let (mut left, right) = self
+            .split_at(offset)
+            .ok_or_else(|| DocumentError::Invariant {
+                message: format!("invalid atom insertion offset {offset}"),
+            })?;
+        left.push_atom(kind, marks);
+        left.append_content(&right);
+        left.normalize();
+        *self = left;
+        Ok(())
+    }
+
     /// Splits a text run at a local byte offset.
     ///
     /// Returns `true` when a split occurred and `false` at the run endpoints.

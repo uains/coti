@@ -2,8 +2,8 @@
 
 use md_core::{TextOffset, TextRange};
 use md_document::{
-    Affinity, Anchor, BlockKind, CellPos, DocPos, Document, DocumentSnapshot, Marks, Selection,
-    SelectionKind, SelectionSet,
+    Affinity, Anchor, AtomKind, BlockKind, CellPos, DocPos, Document, DocumentSnapshot, Marks,
+    Selection, SelectionKind, SelectionSet,
 };
 
 use crate::intent::MoveDirection;
@@ -512,6 +512,20 @@ impl Editor {
                 .ok_or_else(|| EditorError::InvalidIntent {
                     message: "enter target is stale".to_owned(),
                 })?;
+
+        if let BlockKind::TableCell { content } = kind {
+            let mut content = content;
+            content.insert_atom_at(resolved.offset, AtomKind::HardBreak, Marks::plain())?;
+            let mut transaction = Transaction::new(self.document_revision());
+            transaction.push(Operation::SetInlineContent { block_id, content });
+            transaction.apply(self)?;
+            let new_pos = DocPos::new(selection.head.pos.get() + 1);
+            self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
+            self.pending_marks = None;
+            self.state_revision += 1;
+            return Ok(());
+        }
+
         let Some(content) = kind.inline_content() else {
             return Err(EditorError::InvalidIntent {
                 message: "enter only supports inline leaves".to_owned(),
@@ -1268,6 +1282,47 @@ mod tests {
             .unwrap();
         assert_eq!(table_cell(&editor), CellPos::new(2, 0));
         assert_eq!(editor.document().children(table).unwrap().len(), 3);
+        assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn enter_in_table_cell_inserts_hard_break() {
+        let mut editor = editor_with_table();
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        let table = *editor.document().root_children().first().unwrap();
+        let row = editor.document().children(table).unwrap()[0];
+        let cell = editor.document().children(row).unwrap()[0];
+        let content = editor
+            .document()
+            .kind(cell)
+            .and_then(BlockKind::inline_content)
+            .unwrap();
+        assert!(
+            content
+                .runs()
+                .iter()
+                .any(|run| matches!(run.atom_kind(), Some(md_document::AtomKind::HardBreak)))
+        );
+        assert_eq!(editor.document().root_children().len(), 2);
+    }
+
+    #[test]
+    fn enter_in_quote_splits_paragraph_inside_quote() {
+        let mut document = Document::new();
+        let quote = document
+            .insert_block(None, 0, BlockKind::Quote(vec![]))
+            .unwrap();
+        document
+            .append_block(
+                Some(quote),
+                BlockKind::Paragraph(InlineContent::from_text("ab")),
+            )
+            .unwrap();
+        let selection =
+            SelectionSet::new(Selection::collapsed(DocPos::new(1), Affinity::Downstream));
+        let mut editor = Editor::with_selection(document, selection).unwrap();
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        assert_eq!(editor.document().children(quote).unwrap().len(), 2);
         assert!(editor.document().validate().is_ok());
     }
 }

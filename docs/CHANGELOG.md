@@ -1041,3 +1041,10 @@
 - 末格 Tab 追加同列数空行并选中新行首格。
 - RemoveTableRow 仅允许删除末尾空行，作为 Append 的 inverse。
 - `md-editor` 64 个测试；全 Workspace 216 个测试通过。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第十批）：Quote / Table Enter
+
+- `InlineContent::insert_atom_at` 支持任意合法 offset 插入 Atom。
+- TableCell Enter 插入 HardBreak Atom，不拆分表格。
+- Quote 内 Enter 复用段落分裂，保持 Quote 容器。
+- 新增 2 个 Enter 测试；`md-editor` 66 个测试；全 Workspace 218 个测试通过。
