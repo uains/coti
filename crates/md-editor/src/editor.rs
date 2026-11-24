@@ -635,11 +635,50 @@ impl Editor {
         }
 
         let (from, to) = if selection.is_collapsed() {
-            let Some(previous) = self
-                .document
-                .index()
-                .prev_cursor(&self.document, selection.head.pos)
-            else {
+            let index = self.document.index();
+            let resolved =
+                index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+            if resolved.offset == 0
+                && let Some((table, row, column, columns)) =
+                    self.table_cell_context(resolved.block_id)
+            {
+                let previous = if column > 0 {
+                    Some((row, column - 1))
+                } else if row > 0 {
+                    Some((row - 1, columns - 1))
+                } else {
+                    None
+                };
+                if let Some((previous_row, previous_column)) = previous
+                    && let Some(previous_cell) =
+                        self.table_cell_id(table, previous_row, previous_column)
+                {
+                    let leaf_index = index.leaf_index(previous_cell).ok_or_else(|| {
+                        EditorError::InvalidIntent {
+                            message: "previous table cell is not a leaf".to_owned(),
+                        }
+                    })?;
+                    let start =
+                        index
+                            .leaf_start(leaf_index)
+                            .ok_or_else(|| EditorError::InvalidIntent {
+                                message: "previous table cell has no position".to_owned(),
+                            })?;
+                    let len =
+                        index
+                            .leaf_len(leaf_index)
+                            .ok_or_else(|| EditorError::InvalidIntent {
+                                message: "previous table cell has no length".to_owned(),
+                            })?;
+                    self.set_selection(SelectionSet::new(Selection::collapsed(
+                        DocPos::new(start + len),
+                        Affinity::Upstream,
+                    )))?;
+                }
+                return Ok(());
+            }
+
+            let Some(previous) = index.prev_cursor(&self.document, selection.head.pos) else {
                 return Ok(());
             };
             (previous, selection.head.pos)
@@ -687,6 +726,16 @@ impl Editor {
             .iter()
             .position(|id| *id == block)?;
         Some((table, row_index, column_index, aligns.len()))
+    }
+
+    fn table_cell_id(
+        &self,
+        table: md_document::BlockId,
+        row: usize,
+        column: usize,
+    ) -> Option<md_document::BlockId> {
+        let row = *self.document.children(table)?.get(row)?;
+        self.document.children(row)?.get(column).copied()
     }
 
     fn select_table_cell(
@@ -1324,5 +1373,68 @@ mod tests {
         editor.dispatch(Intent::InsertNewline).unwrap();
         assert_eq!(editor.document().children(quote).unwrap().len(), 2);
         assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn backspace_at_table_cell_start_moves_to_previous_cell() {
+        let mut editor = editor_with_table();
+        let table = *editor.document().root_children().first().unwrap();
+        let row = editor.document().children(table).unwrap()[0];
+        let cells = editor.document().children(row).unwrap().to_vec();
+        let second = cells[1];
+        let index = editor.document().index();
+        let leaf_index = index.leaf_index(second).unwrap();
+        let pos = index.leaf_start(leaf_index).unwrap();
+        editor
+            .set_selection(SelectionSet::new(Selection::collapsed(
+                DocPos::new(pos),
+                Affinity::Downstream,
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let first = cells[0];
+        let index = editor.document().index();
+        let first_index = index.leaf_index(first).unwrap();
+        let expected =
+            index.leaf_start(first_index).unwrap() + index.leaf_len(first_index).unwrap();
+        assert_eq!(head(&editor), DocPos::new(expected));
+    }
+
+    #[test]
+    fn backspace_at_first_table_cell_is_noop() {
+        let mut editor = editor_with_table();
+        let revision = editor.document_revision();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert_eq!(editor.document_revision(), revision);
+    }
+
+    #[test]
+    fn backspace_at_row_start_moves_to_previous_row_end() {
+        let mut editor = editor_with_table();
+        let table = *editor.document().root_children().first().unwrap();
+        let rows = editor.document().children(table).unwrap().to_vec();
+        let second_row = rows[1];
+        let first_cell = editor.document().children(second_row).unwrap()[0];
+        let index = editor.document().index();
+        let leaf_index = index.leaf_index(first_cell).unwrap();
+        let pos = index.leaf_start(leaf_index).unwrap();
+        editor
+            .set_selection(SelectionSet::new(Selection::collapsed(
+                DocPos::new(pos),
+                Affinity::Downstream,
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let previous_row = rows[0];
+        let previous_cell = *editor
+            .document()
+            .children(previous_row)
+            .unwrap()
+            .last()
+            .unwrap();
+        let index = editor.document().index();
+        let leaf_index = index.leaf_index(previous_cell).unwrap();
+        let expected = index.leaf_start(leaf_index).unwrap() + index.leaf_len(leaf_index).unwrap();
+        assert_eq!(head(&editor), DocPos::new(expected));
     }
 }

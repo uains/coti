@@ -1048,3 +1048,9 @@
 - TableCell Enter 插入 HardBreak Atom，不拆分表格。
 - Quote 内 Enter 复用段落分裂，保持 Quote 容器。
 - 新增 2 个 Enter 测试；`md-editor` 66 个测试；全 Workspace 218 个测试通过。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第十一批）：TableCell Backspace
+
+- 光标在 TableCell 起点时回退到前一格末尾。
+- 跨行回退到上一行末格；首格 Backspace 为 no-op。
+- 新增 3 个测试；`md-editor` 69 个测试；全 Workspace 221 个测试通过。
