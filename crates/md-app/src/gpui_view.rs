@@ -276,9 +276,11 @@ impl Render for CotiView {
         };
         self.window.relayout_with(&mut measurer);
         window.set_window_title(&self.window.state.title());
+        let background = rgba(self.window.view.theme.background.0);
         div()
             .size_full()
             .overflow_hidden()
+            .bg(background)
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))

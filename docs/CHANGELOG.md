@@ -1228,3 +1228,10 @@
 - DeleteForward 在 separator 处区分 Upstream/Downstream，避免误合并空段。
 - 鼠标拖动建立跨块 Range 选区（on_mouse_move/on_mouse_up）。
 - 新增 2 个跨段删除测试；293 个测试通过。
+
+## 2026-11-24 · 主题背景覆盖整个客户区
+
+- 视图根节点增加主题背景色；DocumentElement 只负责内容区域。
+- 空文档、内容不足一屏时，末行以下不再露出白色父容器背景。
+- 截图验证：空文档整个客户区为墨色背景，光标可见。
+- 原生窗口标题栏仍由系统绘制（未做自定义 titlebar）。
