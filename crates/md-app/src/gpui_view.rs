@@ -712,12 +712,11 @@ impl CotiView {
             f32::from(event.position.x),
             (f32::from(event.position.y) - TITLEBAR_HEIGHT) + self.window.view.scroll.offset_y,
         );
-        if let Some(position) = self.window.view.layout.position_at_point(point) {
+        if let Some((position, affinity)) = self.window.view.layout.position_with_affinity(point) {
             self.dragging = true;
             self.drag_anchor = Some(position);
             let selection = md_document::SelectionSet::new(md_document::Selection::collapsed(
-                position,
-                md_document::Affinity::Downstream,
+                position, affinity,
             ));
             let _ = self.window.state.editor_mut().set_selection(selection);
             self.window.sync_view();

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use md_core::{Point, Rect, Size};
 use md_document::{
-    BlockId, BlockKind, DocPos, Document, DocumentIndex, SelectionKind, SelectionSet,
+    Affinity, BlockId, BlockKind, DocPos, Document, DocumentIndex, SelectionKind, SelectionSet,
 };
 
 use crate::inline::{InlineLayout, Line, layout_inline};
@@ -126,6 +126,30 @@ impl LayoutTree {
             None
         }
         find(&self.blocks, id)
+    }
+
+    /// Hit-tests a point and returns the position plus block-boundary affinity.
+    ///
+    /// Clicking at the end of a block yields `Upstream`, so Backspace deletes the
+    /// last character instead of joining the next block.
+    #[must_use]
+    pub fn position_with_affinity(&self, point: Point) -> Option<(DocPos, Affinity)> {
+        let leaf = self.leaf_at_point(point)?;
+        let line = leaf
+            .lines
+            .iter()
+            .find(|line| point.y >= line.rect.top() && point.y < line.rect.bottom())
+            .or_else(|| leaf.lines.last())?;
+        let local = line.offset_at_x(point.x);
+        let leaf_index = self.index.leaf_index(leaf.id)?;
+        let start = self.index.leaf_start(leaf_index)?;
+        let length = self.index.leaf_len(leaf_index)?;
+        let affinity = if local == length && leaf_index + 1 < self.index.leaf_order().len() {
+            Affinity::Upstream
+        } else {
+            Affinity::Downstream
+        };
+        Some((DocPos::new(start + local), affinity))
     }
 
     /// Returns the caret rectangle for a document position.

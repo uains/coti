@@ -977,7 +977,25 @@ impl Editor {
             return Ok(());
         };
 
-        let (block_id, range) = self.primary_local_range(from, to)?;
+        let (block_id, range) = match self.primary_local_range(from, to) {
+            Ok(range) => range,
+            Err(_) => {
+                let index = self.document.index();
+                let start = index.resolve_position(&self.document, from, Affinity::Downstream)?;
+                let len = self
+                    .document
+                    .kind(start.block_id)
+                    .and_then(BlockKind::leaf_len)
+                    .unwrap_or(0);
+                (
+                    start.block_id,
+                    TextRange::new(
+                        TextOffset::new(start.offset),
+                        TextOffset::new(len.max(start.offset)),
+                    ),
+                )
+            }
+        };
         let operation = Operation::ReplaceText {
             block_id,
             range,
@@ -1261,8 +1279,11 @@ impl Editor {
 
         let (from, to) = if selection.is_collapsed() {
             let index = self.document.index();
-            let resolved =
-                index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+            let resolved = index.resolve_position(
+                &self.document,
+                selection.head.pos,
+                selection.head.affinity,
+            )?;
             if resolved.offset == 0
                 && let Some((table, row, column, columns)) =
                     self.table_cell_context(resolved.block_id)
@@ -1393,7 +1414,25 @@ impl Editor {
             return Ok(());
         };
 
-        let (block_id, range) = self.primary_local_range(from, to)?;
+        let (block_id, range) = match self.primary_local_range(from, to) {
+            Ok(range) => range,
+            Err(_) => {
+                let index = self.document.index();
+                let start = index.resolve_position(&self.document, from, Affinity::Downstream)?;
+                let len = self
+                    .document
+                    .kind(start.block_id)
+                    .and_then(BlockKind::leaf_len)
+                    .unwrap_or(0);
+                (
+                    start.block_id,
+                    TextRange::new(
+                        TextOffset::new(start.offset),
+                        TextOffset::new(len.max(start.offset)),
+                    ),
+                )
+            }
+        };
         let operation = Operation::ReplaceText {
             block_id,
             range,
@@ -1879,6 +1918,12 @@ mod tests {
     #[test]
     fn backspace_at_block_start_joins_previous_paragraph() {
         let mut editor = editor_at(6);
+        editor
+            .set_selection(SelectionSet::new(Selection::collapsed(
+                DocPos::new(6),
+                Affinity::Downstream,
+            )))
+            .unwrap();
         editor.dispatch(Intent::DeleteBackward).unwrap();
         assert_eq!(editor.document().root_children().len(), 2);
         let block = editor.document().root_children()[1];
@@ -2113,12 +2158,72 @@ mod tests {
     }
 
     #[test]
+    fn backspace_at_real_heading_and_list_ends() {
+        let source = "# 这是一份markdown语法教程\n\n## markdown语法单元\n\n- 文本段落\n- 列表\n- 表格\n- 行内代码\n- 数学表达式\n- 代码块\n";
+        for needle in ["教程", "单元", "代码块"] {
+            let parsed = md_markdown::parse(source).unwrap();
+            let index = parsed.document().index();
+            let leaf = index
+                .leaf_order()
+                .iter()
+                .find(|leaf| {
+                    parsed
+                        .document()
+                        .kind(**leaf)
+                        .and_then(BlockKind::inline_content)
+                        .is_some_and(|content| content.plain_text().contains(needle))
+                })
+                .copied()
+                .unwrap();
+            let leaf_index = index.leaf_index(leaf).unwrap();
+            let start = index.leaf_start(leaf_index).unwrap();
+            let len = index.leaf_len(leaf_index).unwrap();
+            let selection = SelectionSet::new(Selection::collapsed(
+                DocPos::new(start + len),
+                Affinity::Upstream,
+            ));
+            let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+            editor.dispatch(Intent::DeleteBackward).unwrap();
+            let output = md_markdown::serialize_document(editor.document(), source);
+            let expected = needle
+                .chars()
+                .next_back()
+                .map(|_last| {
+                    let mut shortened = needle.to_owned();
+                    shortened.pop();
+                    shortened
+                })
+                .unwrap();
+            assert!(
+                !output.contains(needle),
+                "failed deleting {needle:?}: {output:?}"
+            );
+            assert!(
+                output.contains(&expected),
+                "missing expected text for {needle:?}: {output:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn backspace_at_heading_end_deletes_last_char() {
+        let source = "# A\n\n## B\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(DocPos::new(1), Affinity::Upstream));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("# \n"), "unexpected output: {output:?}");
+        assert!(output.contains("## B"), "unexpected output: {output:?}");
+    }
+
+    #[test]
     fn backspace_removes_empty_last_list_item() {
         let source = "- a\n";
         let parsed = md_markdown::parse(source).unwrap();
         let selection = SelectionSet::new(Selection::collapsed(
             DocPos::new(parsed.document().index().doc_length()),
-            Affinity::Downstream,
+            Affinity::Upstream,
         ));
         let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
         editor.dispatch(Intent::DeleteBackward).unwrap();
