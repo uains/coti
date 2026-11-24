@@ -15,36 +15,63 @@ pub fn build_paint_plan(
     caret: Option<DocPos>,
     theme: &Theme,
 ) -> PaintPlan {
+    build_paint_plan_inner(layout, document, selection, caret, theme, None)
+}
+
+/// Builds a paint plan restricted to a layout-space viewport.
+#[must_use]
+pub fn build_paint_plan_visible(
+    layout: &LayoutTree,
+    document: &Document,
+    selection: &SelectionSet,
+    caret: Option<DocPos>,
+    theme: &Theme,
+    viewport: Rect,
+) -> PaintPlan {
+    build_paint_plan_inner(layout, document, selection, caret, theme, Some(viewport))
+}
+
+fn build_paint_plan_inner(
+    layout: &LayoutTree,
+    document: &Document,
+    selection: &SelectionSet,
+    caret: Option<DocPos>,
+    theme: &Theme,
+    viewport: Option<Rect>,
+) -> PaintPlan {
     let mut plan = PaintPlan::default();
 
     for block in &layout.blocks {
-        paint_block_backgrounds(block, &mut plan, theme);
+        paint_block_backgrounds(block, &mut plan, theme, viewport);
     }
 
     for block in &layout.blocks {
-        paint_block_decorations(block, &mut plan, theme);
+        paint_block_decorations(block, &mut plan, theme, viewport);
     }
 
     for rect in layout.selection_rects(selection) {
-        plan.push(
-            PaintLayer::Selection,
-            PaintCommand::FillRect {
-                rect,
-                color: theme.selection,
-            },
-        );
+        if viewport.is_none_or(|viewport| rect.intersect(viewport).is_some()) {
+            plan.push(
+                PaintLayer::Selection,
+                PaintCommand::FillRect {
+                    rect,
+                    color: theme.selection,
+                },
+            );
+        }
     }
 
     for block in &layout.blocks {
-        paint_text(block, &mut plan, theme, None);
+        paint_text(block, &mut plan, theme, None, viewport);
     }
 
     for block in &layout.blocks {
-        paint_atoms(block, document, &mut plan);
+        paint_atoms(block, document, &mut plan, viewport);
     }
 
     if let Some(pos) = caret
         && let Some(rect) = layout.caret_rect(pos)
+        && viewport.is_none_or(|viewport| rect.intersect(viewport).is_some())
     {
         plan.push(
             PaintLayer::Caret,
@@ -58,7 +85,15 @@ pub fn build_paint_plan(
     plan
 }
 
-fn paint_block_backgrounds(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme) {
+fn paint_block_backgrounds(
+    block: &BlockLayout,
+    plan: &mut PaintPlan,
+    theme: &Theme,
+    viewport: Option<Rect>,
+) {
+    if viewport.is_some_and(|viewport| block.rect.intersect(viewport).is_none()) {
+        return;
+    }
     let color = match block.kind {
         LayoutKind::CodeBlock | LayoutKind::Html | LayoutKind::Math | LayoutKind::FrontMatter => {
             Some(theme.code_background)
@@ -77,11 +112,20 @@ fn paint_block_backgrounds(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
         );
     }
     for child in &block.children {
-        paint_block_backgrounds(child, plan, theme);
+        paint_block_backgrounds(child, plan, theme, viewport);
     }
 }
 
-fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherited: Option<Color>) {
+fn paint_text(
+    block: &BlockLayout,
+    plan: &mut PaintPlan,
+    theme: &Theme,
+    inherited: Option<Color>,
+    viewport: Option<Rect>,
+) {
+    if viewport.is_some_and(|viewport| block.rect.intersect(viewport).is_none()) {
+        return;
+    }
     let color = inherited.unwrap_or(match block.kind {
         LayoutKind::Heading(_) => theme.heading,
         LayoutKind::CodeBlock | LayoutKind::Html | LayoutKind::Math | LayoutKind::FrontMatter => {
@@ -91,6 +135,9 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
         _ => theme.text,
     });
     for line in &block.lines {
+        if viewport.is_some_and(|viewport| line.rect.intersect(viewport).is_none()) {
+            continue;
+        }
         let flush = |plan: &mut PaintPlan,
                      text: String,
                      marks: &md_document::Marks,
@@ -190,11 +237,19 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
         _ => inherited,
     };
     for child in &block.children {
-        paint_text(child, plan, theme, child_inherited);
+        paint_text(child, plan, theme, child_inherited, viewport);
     }
 }
 
-fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme) {
+fn paint_block_decorations(
+    block: &BlockLayout,
+    plan: &mut PaintPlan,
+    theme: &Theme,
+    viewport: Option<Rect>,
+) {
+    if viewport.is_some_and(|viewport| block.rect.intersect(viewport).is_none()) {
+        return;
+    }
     match block.kind {
         LayoutKind::Quote | LayoutKind::Footnote => {
             plan.push(
@@ -248,7 +303,9 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
             }
         }
         LayoutKind::Table => {
-            if let Some(header) = block.children.first() {
+            if let Some(header) = block.children.first()
+                && viewport.is_none_or(|viewport| header.rect.intersect(viewport).is_some())
+            {
                 plan.push(
                     PaintLayer::Decorations,
                     PaintCommand::FillRect {
@@ -287,6 +344,9 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                 );
             }
             for (row_index, row) in block.children.iter().enumerate() {
+                if viewport.is_some_and(|viewport| row.rect.intersect(viewport).is_none()) {
+                    continue;
+                }
                 if row_index + 1 < block.children.len() {
                     plan.push(
                         PaintLayer::Decorations,
@@ -319,6 +379,9 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
         }
         LayoutKind::List { ordered } => {
             for (index, item) in block.children.iter().enumerate() {
+                if viewport.is_some_and(|viewport| item.rect.intersect(viewport).is_none()) {
+                    continue;
+                }
                 if ordered {
                     plan.push(
                         PaintLayer::Decorations,
@@ -359,11 +422,19 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
         _ => {}
     }
     for child in &block.children {
-        paint_block_decorations(child, plan, theme);
+        paint_block_decorations(child, plan, theme, viewport);
     }
 }
 
-fn paint_atoms(block: &BlockLayout, document: &Document, plan: &mut PaintPlan) {
+fn paint_atoms(
+    block: &BlockLayout,
+    document: &Document,
+    plan: &mut PaintPlan,
+    viewport: Option<Rect>,
+) {
+    if viewport.is_some_and(|viewport| block.rect.intersect(viewport).is_none()) {
+        return;
+    }
     if block.kind == LayoutKind::Image
         && let Some(BlockKind::ImageBlock { image, .. }) = document.kind(block.id)
     {
@@ -376,7 +447,7 @@ fn paint_atoms(block: &BlockLayout, document: &Document, plan: &mut PaintPlan) {
         );
     }
     for child in &block.children {
-        paint_atoms(child, document, plan);
+        paint_atoms(child, document, plan, viewport);
     }
 }
 
@@ -396,9 +467,48 @@ pub const fn transparent() -> Color {
 mod tests {
     use super::build_paint_plan;
     use crate::theme::{PaintCommand, PaintLayer, Theme};
-    use md_core::Size;
+    use md_core::{Rect, Size};
     use md_document::{Affinity, Anchor, DocPos, Document, InlineContent, Selection, SelectionSet};
     use md_layout::{LayoutEnv, LayoutTree, ResolvedStyle};
+
+    #[test]
+    fn visible_plan_culls_offscreen_blocks() {
+        let mut document = Document::new();
+        document
+            .set_inline_content(
+                document.root_children()[0],
+                InlineContent::from_text("line 0"),
+            )
+            .unwrap();
+        for index in 1..40 {
+            document
+                .append_block(
+                    None,
+                    md_document::BlockKind::Paragraph(InlineContent::from_text(format!(
+                        "line {index}"
+                    ))),
+                )
+                .unwrap();
+        }
+        let env = LayoutEnv::new(Size::new(300.0, 120.0), ResolvedStyle::default());
+        let layout = LayoutTree::full(&document, env);
+        let selection = SelectionSet::new(Selection::collapsed(DocPos::ZERO, Affinity::Downstream));
+        let theme = Theme::default();
+        let full = build_paint_plan(&layout, &document, &selection, None, &theme);
+        let visible = super::build_paint_plan_visible(
+            &layout,
+            &document,
+            &selection,
+            None,
+            &theme,
+            Rect::new(0.0, 0.0, 300.0, 120.0),
+        );
+        assert!(visible.items.len() < full.items.len());
+        assert!(visible.items.iter().any(|item| matches!(
+            &item.command,
+            PaintCommand::Text { text, .. } if text.contains("line 0")
+        )));
+    }
 
     #[test]
     fn inline_code_uses_monospace_and_background() {

@@ -1552,3 +1552,13 @@
 - IME 预编辑文本也按视口裁剪。
 - 布局仍保留完整文档几何，属于 paint 级虚拟渲染，不是分块窗口布局。
 - 322 个测试通过。
+
+## 2026-11-24 · 绘制计划级虚拟渲染
+
+- 新增 `build_paint_plan_visible` / `RenderView::paint_visible`。
+- 绘制计划本身只生成视口 ± 一屏内的 block 内容：背景、装饰、文本、图片、列表、表格行均提前裁剪。
+- GPUI prepaint 使用可见计划，离屏内容不再进入 PaintPlan，也不再 shape 文本或解码图片。
+- 保留原有 prepaint 命令级裁剪作为安全层。
+- 布局仍保留完整文档高度（scroll/caret 需要），但绘制与 shaping 已虚拟化。
+- 新增 visible plan 裁剪测试。
+- 323 个测试通过。

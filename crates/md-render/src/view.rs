@@ -1,11 +1,11 @@
 //! Render view state assembled from layout, theme, and input adapters.
 
-use md_core::Size;
+use md_core::{Rect, Size};
 use md_document::{DocPos, Document, SelectionSet};
 use md_layout::{LayoutEnv, LayoutTree, ResolvedStyle};
 
 use crate::input::{CaretBlink, InputAdapter, ScrollState};
-use crate::paint::build_paint_plan;
+use crate::paint::{build_paint_plan, build_paint_plan_visible};
 use crate::theme::{PaintPlan, Theme};
 
 /// GPUI-facing view state. It owns no document and never mutates it.
@@ -56,6 +56,25 @@ impl RenderView {
         caret: Option<DocPos>,
     ) -> PaintPlan {
         build_paint_plan(&self.layout, document, selection, caret, &self.theme)
+    }
+
+    /// Builds a paint plan restricted to a layout-space viewport.
+    #[must_use]
+    pub fn paint_visible(
+        &self,
+        document: &Document,
+        selection: &SelectionSet,
+        caret: Option<DocPos>,
+        viewport: Rect,
+    ) -> PaintPlan {
+        build_paint_plan_visible(
+            &self.layout,
+            document,
+            selection,
+            caret,
+            &self.theme,
+            viewport,
+        )
     }
 }
 

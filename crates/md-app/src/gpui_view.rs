@@ -1660,11 +1660,22 @@ impl Element for DocumentElement {
         let caret = selection
             .primary_selection()
             .map(|selection| selection.head.pos);
-        let plan = view
-            .window
-            .view
-            .paint(view.window.state.editor().document(), &selection, caret);
         let scroll = view.window.view.scroll.offset_y;
+        let viewport_height = view.window.viewport.height.max(1.0);
+        let paint_top = scroll - viewport_height;
+        let paint_bottom = scroll + viewport_height * 2.0;
+        let paint_viewport = md_core::Rect::new(
+            0.0,
+            paint_top,
+            f32::from(bounds.size.width),
+            paint_bottom - paint_top,
+        );
+        let plan = view.window.view.paint_visible(
+            view.window.state.editor().document(),
+            &selection,
+            caret,
+            paint_viewport,
+        );
         let text_style = window.text_style();
         let mut items = Vec::new();
         items.push(PreparedItem::Quad(fill(
@@ -1673,9 +1684,6 @@ impl Element for DocumentElement {
         )));
         let composing = view.window.state.editor().composition().is_some();
         let editor_active = view.editor_active;
-        let viewport_height = view.window.viewport.height.max(1.0);
-        let paint_top = scroll - viewport_height;
-        let paint_bottom = scroll + viewport_height * 2.0;
         let visible =
             |rect: md_core::Rect| rect.bottom() >= paint_top && rect.top() <= paint_bottom;
         for item in plan.items {
