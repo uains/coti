@@ -622,7 +622,7 @@ HTML 粘贴属于后续扩展，不列入首个正式交付版本的完成条件
 | 6.3 剪贴板 | 完成（纯文本） | copy_text、paste_text、空行分段 |
 | 6.4 InputRules | 部分 | `# ` 标题规则 |
 
-### 阶段 7：`md-layout` 布局引擎
+### 阶段 7：`md-layout` 布局引擎（已完成，核心范围）
 
 **目标：**
 将文档模型转换为稳定的布局几何，支持文本测量、自动换行、Hit-test、选区绘制和增量布局。
@@ -696,6 +696,14 @@ HTML 粘贴属于后续扩展，不列入首个正式交付版本的完成条件
 -   随机编辑 5000 次验证增量等价。
 -   可见范围布局正确。
 -   滚动时不触发无意义的全文重排。
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 7.1 测量 | 完成（基础） | ResolvedStyle、LayoutEnv、TextMeasurer、FakeMeasurer、宽度缓存 |
+| 7.2 Inline | 完成（基础） | Cluster、Line、自动换行、CJK 断行、caret 映射 |
+| 7.3 Block | 完成（基础） | Paragraph/Heading/Code/Quote/List/Table/Image/Rule |
+| 7.4 几何 | 完成 | caret、hit-test、range rects、visible、block_outer |
+| 7.5 增量 | 完成（基础） | 叶级缓存、invalidate、全量等价、5000 次编辑测试 |
 
 ### 阶段 8：`md-render` GPUI 渲染层
 

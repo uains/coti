@@ -1095,3 +1095,13 @@
 
 - 阶段 6 按核心范围验收：History、IME Commit/Cancel、纯文本剪贴板、Heading InputRule。
 - 已知增量：Markdown/HTML 剪贴板、List/Quote/CodeBlock InputRule、跨块 Composition、IME marked range 高亮、真实输入法集成测试。
+
+## 2026-11-24 · 阶段 7：`md-layout` 纯几何布局引擎
+
+- **7.1 测量**：`ResolvedStyle`、`LayoutEnv`、`MeasureStyle`、`PaintStyle`、`TextMeasurer`、`FakeMeasurer`、`LineMetrics`、宽度缓存。
+- **7.2 Inline**：grapheme cluster、Atom、HardBreak、自动换行、CJK 逐字断行、caret x/offset 映射。
+- **7.3 Block**：Paragraph、Heading、CodeBlock、Html/Math/FrontMatter、Quote、List/ListItem、Table/Row/Cell、Image、ThematicBreak。
+- **7.4 几何**：`caret_rect`、`position_at_point`、`rects_for_range`、`selection_rects`、`block_outer`、`closest_x`、`visible`、`total_height`。
+- **7.5 增量**：`LayoutEngine` 叶级 line cache、invalidate、全量/增量逐字段相等、5000 次编辑等价测试、±1 屏可见范围。
+- `md-layout` 19 个测试；全 Workspace 261 个测试通过。
+- 已知增量：精确 CJK 禁则/悬挂空白、图片内在尺寸、表格列宽策略、滚动锚定与完整虚拟化。

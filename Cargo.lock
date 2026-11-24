@@ -265,6 +265,7 @@ dependencies = [
  "md-core",
  "md-document",
  "thiserror",
+ "unicode-segmentation",
 ]
 
 [[package]]

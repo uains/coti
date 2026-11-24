@@ -9,6 +9,7 @@ publish = false
 md-core.workspace = true
 md-document.workspace = true
 thiserror.workspace = true
+unicode-segmentation.workspace = true
 
 [lints]
 workspace = true

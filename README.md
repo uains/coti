@@ -15,7 +15,7 @@ Coti 的名字来自拉丁语cotidianus（每日的）。它不追求“第二�
 
 ## 开发
 
-当前完成阶段 6（History / IME / 剪贴板 / Heading InputRule），下一步进入阶段 7（`md-layout` 布局引擎）。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+当前完成阶段 7（`md-layout` 纯几何布局引擎），下一步进入阶段 8（`md-render` GPUI 渲染层）。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ```powershell
 cargo run -p md-app
