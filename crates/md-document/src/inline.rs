@@ -1,7 +1,7 @@
 //! Inline content: flat text runs, formatting marks, and atomic inline items.
 
 use bitflags::bitflags;
-use md_core::{TextBuf, TextOffset};
+use md_core::{TextBuf, TextOffset, TextRange};
 
 use crate::{DocumentError, DocumentResult};
 
@@ -373,6 +373,101 @@ impl InlineContent {
         None
     }
 
+    /// Splits inline content at a local offset.
+    ///
+    /// Returns `None` for an invalid offset. The first element is the prefix and
+    /// the second is the suffix; atom boundaries are never split.
+    #[must_use]
+    pub fn split_at(&self, offset: usize) -> Option<(Self, Self)> {
+        if offset > self.len || !self.is_valid_offset(offset) {
+            return None;
+        }
+
+        let mut left = Self::new();
+        let mut right = Self::new();
+        let mut run_start = 0;
+
+        for run in &self.runs {
+            let run_end = run_start + run.len();
+            if run_end <= offset {
+                left.push_cloned_run(run);
+            } else if run_start >= offset {
+                right.push_cloned_run(run);
+            } else {
+                let Run::Text { text, marks } = run else {
+                    return None;
+                };
+                let local = offset - run_start;
+                let mut prefix = text.clone();
+                let suffix = prefix.split_off(TextOffset::new(local)).ok()?;
+                left.push_cloned_run(&Run::Text {
+                    text: prefix,
+                    marks: marks.clone(),
+                });
+                right.push_cloned_run(&Run::Text {
+                    text: suffix,
+                    marks: marks.clone(),
+                });
+            }
+            run_start = run_end;
+        }
+
+        left.len = left.runs.iter().map(Run::len).sum();
+        right.len = right.runs.iter().map(Run::len).sum();
+        Some((left, right))
+    }
+
+    /// Replaces a local range with text carrying `marks`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invariant error for a reversed/out-of-bounds range or a range
+    /// endpoint inside a UTF-8 code point or atom.
+    pub fn replace_text(
+        &mut self,
+        range: TextRange,
+        text: &str,
+        marks: Marks,
+    ) -> DocumentResult<()> {
+        if !range.is_valid()
+            || range.end().get() > self.len
+            || !self.is_valid_offset(range.start().get())
+            || !self.is_valid_offset(range.end().get())
+        {
+            return Err(DocumentError::Invariant {
+                message: format!("invalid inline replacement range {range}"),
+            });
+        }
+
+        let (mut left, rest) =
+            self.split_at(range.start().get())
+                .ok_or_else(|| DocumentError::Invariant {
+                    message: "could not split inline content at range start".to_owned(),
+                })?;
+        let (_, right) = rest
+            .split_at(range.end().get() - range.start().get())
+            .ok_or_else(|| DocumentError::Invariant {
+                message: "could not split inline content at range end".to_owned(),
+            })?;
+
+        if !text.is_empty() {
+            left.push_run(Run::text(text, marks))?;
+        }
+        left.append_content(right);
+        left.normalize();
+        *self = left;
+        Ok(())
+    }
+
+    fn push_cloned_run(&mut self, run: &Run) {
+        self.runs.push(run.clone());
+    }
+
+    fn append_content(&mut self, other: Self) {
+        self.runs.extend(other.runs);
+        self.len += other.len;
+    }
+
     /// Returns the run slice.
     #[must_use]
     pub fn runs(&self) -> &[Run] {
@@ -598,7 +693,7 @@ mod tests {
         AtomKind, ImageRef, InlineContent, InlineNormalizeChange, LinkRef, MarkFlags, Marks, Run,
     };
     use crate::DocumentError;
-    use md_core::TextOffset;
+    use md_core::{TextOffset, TextRange};
 
     fn offset(value: usize) -> TextOffset {
         TextOffset::new(value)
@@ -816,5 +911,82 @@ mod tests {
         assert_eq!(content.prev_offset(1), Some(0));
         assert_eq!(content.prev_offset(0), None);
         assert_eq!(content.prev_offset(2), None);
+    }
+
+    #[test]
+    fn split_at_preserves_marks_and_lengths() {
+        let mut content = InlineContent::new();
+        content
+            .push_run(Run::text("ab", Marks::with_flags(MarkFlags::STRONG)))
+            .unwrap();
+        content
+            .push_run(Run::text("cd", Marks::with_flags(MarkFlags::EMPHASIS)))
+            .unwrap();
+
+        let (left, right) = content.split_at(3).unwrap();
+        assert_eq!(left.len(), 3);
+        assert_eq!(right.len(), 1);
+        assert_eq!(left.runs()[0].text_ref().unwrap().as_str(), "ab");
+        assert_eq!(left.runs()[1].text_ref().unwrap().as_str(), "c");
+        assert_eq!(right.runs()[0].text_ref().unwrap().as_str(), "d");
+        assert!(content.split_at(5).is_none());
+    }
+
+    #[test]
+    fn replace_text_preserves_surrounding_marks() {
+        let mut content = InlineContent::new();
+        content
+            .push_run(Run::text("ab", Marks::with_flags(MarkFlags::STRONG)))
+            .unwrap();
+        content
+            .push_run(Run::text("cd", Marks::with_flags(MarkFlags::EMPHASIS)))
+            .unwrap();
+
+        content
+            .replace_text(
+                TextRange::new(TextOffset::new(1), TextOffset::new(3)),
+                "X",
+                Marks::with_flags(MarkFlags::CODE),
+            )
+            .unwrap();
+        assert_eq!(content.len(), 3);
+        assert_eq!(content.runs()[0].text_ref().unwrap().as_str(), "a");
+        assert!(content.runs()[0].marks().flags.contains(MarkFlags::STRONG));
+        assert!(content.runs()[1].marks().flags.contains(MarkFlags::CODE));
+        assert_eq!(content.runs()[1].text_ref().unwrap().as_str(), "X");
+        assert!(
+            content.runs()[2]
+                .marks()
+                .flags
+                .contains(MarkFlags::EMPHASIS)
+        );
+        assert_eq!(content.runs()[2].text_ref().unwrap().as_str(), "d");
+    }
+
+    #[test]
+    fn replace_text_can_remove_a_range() {
+        let mut content = InlineContent::from_text("abc");
+        content
+            .replace_text(
+                TextRange::new(TextOffset::new(1), TextOffset::new(2)),
+                "",
+                Marks::plain(),
+            )
+            .unwrap();
+        assert_eq!(content.runs()[0].text_ref().unwrap().as_str(), "ac");
+    }
+
+    #[test]
+    fn replace_text_rejects_partial_code_point_ranges() {
+        let mut content = InlineContent::from_text("你");
+        assert!(
+            content
+                .replace_text(
+                    TextRange::new(TextOffset::new(1), TextOffset::new(2)),
+                    "x",
+                    Marks::plain()
+                )
+                .is_err()
+        );
     }
 }

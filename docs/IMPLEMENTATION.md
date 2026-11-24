@@ -1439,13 +1439,13 @@ docs/
 
 ### 阶段 5：`md-editor` 编辑内核（进行中）
 
-**当前进度：** 5.1 完成；阶段 5 未完成。
+**当前进度：** 5.1～5.3 完成；阶段 5 未完成。
 
 | 步骤 | 状态 | 产物 |
 |---|---|---|
 | 5.1 Intent / Editor / Rule 表 | 完成 | `Intent`、`Editor`、`EditorConfig`、`Composition`、`RuleId`、静态 Move 规则 |
-| 5.2 Operation | 未开始 | 文本/Inline/Block/Move/Split/Join + inverse |
-| 5.3 Transaction | 未开始 | 快照回滚、preflight、validate、ChangeSet |
+| 5.2 Operation | 完成 | ReplaceText/SetInline/SetRaw/Insert/Remove/Move/SetKind + inverse |
+| 5.3 Transaction | 完成 | 快照回滚、base revision、validate、ChangeSet |
 | 5.4 PositionMapping | 未开始 | 映射原语与组合 |
 | 5.5 Rule Table | 未开始 | Enter/Backspace/Delete/Tab/DeleteRange |
 | 5.6 属性测试 | 未开始 | 随机 Intent、选区映射、回滚 |
@@ -1463,19 +1463,23 @@ docs/
 
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets -- -D warnings`：通过。
-- `cargo test --workspace`：167 个测试通过。
-  - `md-editor` 22 个测试。
+- `cargo test --workspace`：185 个测试通过。
+  - `md-editor` 36 个测试。
 - Move 规则覆盖：每条 RuleId 3 个以上用例；grapheme、CJK、Atom、跨叶、DocStart/DocEnd、扩展选区。
+- Operation/Transaction 测试覆盖 inverse、成功提交、空事务、陈旧 revision、操作失败/validate 失败回滚。
 
 #### 已知问题
 
 - 其他 Intent 尚未注册规则，当前返回 `InvalidIntent`；阶段 5 未完成。
-- Rule 表目前只有 guard；apply 由 Editor 按 RuleId 分派，等 Operation/Transaction 落地后统一。
+- Rule 表目前只有 guard；apply 由 Editor 按 RuleId 分派，尚未接入 Transaction。
 - Move 仅支持 Range 选择；Node/TableCells 移动未实现。
-- 多选区 Move 只映射 head，尚未处理结构操作与选区合并。
+- `RemoveBlock` 只支持叶子块；inverse 重新插入新 BlockId，不保证原 ID。
+- `SetBlockKind` 只支持叶子块；SplitBlock/JoinBlocks 与 PositionMapping 未实现。
 
 #### 下一步
 
-- 5.2：Operation 原语与 inverse。优先实现文本替换与块结构操作，再接入 5.3 Transaction。
+- 5.4：PositionMapping 原语与组合。
+- 5.5：Enter/Backspace/DeleteForward/Tab/DeleteRange 规则表，接入 Transaction。
+- 5.6：随机 Intent 属性测试与阶段 5 汇总。
 
 ---

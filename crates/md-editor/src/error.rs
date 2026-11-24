@@ -1,11 +1,16 @@
 //! Error types for the headless editing kernel.
 
+use md_core::TextError;
 use md_document::{DocumentError, PositionError, SelectionError};
 
 /// Errors produced while dispatching intents or applying transactions.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum EditorError {
+    /// A text edit rejected an offset or range.
+    #[error("{0}")]
+    Text(#[from] TextError),
+
     /// A document operation rejected the requested change.
     #[error("{0}")]
     Document(#[from] DocumentError),

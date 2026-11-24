@@ -6,12 +6,16 @@
 mod editor;
 mod error;
 mod intent;
+mod operation;
 mod rule;
+mod transaction;
 
 pub use editor::{Composition, Editor, EditorConfig};
 pub use error::{EditorError, EditorResult};
 pub use intent::{BlockStyle, Intent, MoveDirection};
+pub use operation::{AppliedOperation, Operation};
 pub use rule::{Ctx, Rule, RuleId};
+pub use transaction::{ChangeSet, Transaction};
 
 // Keep this declared crate boundary linked while editor modules grow.
 use md_core as _;

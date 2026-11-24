@@ -136,6 +136,67 @@ impl Document {
         self.arena.get_mut(id)?.kind_mut().raw_text_mut()
     }
 
+    /// Replaces raw text for a CodeBlock or raw block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a stale id or a non-raw block.
+    pub fn set_raw_text(&mut self, id: BlockId, text: TextBuf) -> DocumentResult<()> {
+        let node = self.arena.get_mut(id).ok_or_else(|| stale(id))?;
+        let target = node
+            .kind_mut()
+            .raw_text_mut()
+            .ok_or(DocumentError::NotALeaf {
+                index: id.index(),
+                generation: id.generation(),
+            })?;
+        *target = text;
+        self.rebuild_index();
+        Ok(())
+    }
+
+    /// Replaces a leaf block's kind.
+    ///
+    /// Container kinds are intentionally rejected here; structural replacement
+    /// must go through explicit Operation/Transaction rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a stale id, parent/child mismatch, container kind,
+    /// or invalid kind.
+    pub fn set_block_kind(&mut self, id: BlockId, kind: BlockKind) -> DocumentResult<()> {
+        let node = self.arena.get(id).ok_or_else(|| stale(id))?;
+        if node.kind().is_container() || kind.is_container() {
+            return Err(DocumentError::Invariant {
+                message: "set_block_kind only supports leaf blocks".to_owned(),
+            });
+        }
+        kind.validate()?;
+
+        let parent = node.parent();
+        if let Some(parent_id) = parent {
+            let parent_node = self.arena.get(parent_id).ok_or_else(|| stale(parent_id))?;
+            if !kind.can_be_child_of(parent_node.kind()) {
+                return Err(DocumentError::Invariant {
+                    message: format!(
+                        "{} cannot be a child of {}",
+                        kind.kind_name(),
+                        parent_node.kind().kind_name()
+                    ),
+                });
+            }
+        } else if !kind.is_block_level() {
+            return Err(DocumentError::Invariant {
+                message: format!("{} cannot be a root block", kind.kind_name()),
+            });
+        }
+
+        let node = self.arena.get_mut(id).ok_or_else(|| stale(id))?;
+        *node.kind_mut() = kind;
+        self.rebuild_index();
+        Ok(())
+    }
+
     /// Sets a list item's task checkbox state.
     ///
     /// # Errors

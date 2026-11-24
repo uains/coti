@@ -880,3 +880,46 @@
 - 5.3：Transaction 快照回滚、preflight、validate、ChangeSet。
 - 5.4：PositionMapping。
 - 5.5：Enter/Backspace/DeleteForward/Tab/DeleteRange 规则表与夹具。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.2～5.3：Operation 与 Transaction
+
+**状态：** 已完成；阶段 5 仍在进行中。
+
+### 变更
+
+- `InlineContent` 新增 `split_at` 与 `replace_text`，支持保留 Marks 的范围替换、拆分和删除。
+- 新增 `Operation`：
+  - `ReplaceText`、`SetInlineContent`、`SetRawText`。
+  - `InsertBlock`、`RemoveBlock`、`MoveBlock`、`SetBlockKind`。
+- 每个 Operation 返回 `AppliedOperation { inverse, affected }`。
+- `Document` 新增 `set_raw_text`、`set_block_kind`。
+- 新增 `Transaction`：
+  - base revision 检查。
+  - 顺序 apply，收集 inverse 与 affected。
+  - 任一步失败或 `Document::validate` 失败时恢复快照。
+  - 成功后递增 document revision，返回 `ChangeSet`。
+- 新增 6 个 Transaction 测试、8 个 Operation 测试、4 个 Inline 替换/拆分测试。
+- `md-editor` 目前 36 个测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：185 个测试通过。
+  - `md-editor` 36 个测试。
+- Transaction 测试覆盖成功提交、空事务、陈旧 revision、操作失败回滚、validate 失败回滚。
+
+### 设计说明
+
+- 采用已确认的“快照回滚 + inverse”策略：Document 快照保证失败强一致，Operation inverse 供阶段 6 History 使用。
+- `RemoveBlock` 目前只允许叶子块；容器删除的 inverse 需要子树快照/staging，留到后续。
+- `RemoveBlock` 的 inverse 是重新插入同 Kind 的新 BlockId，不保证原 ID；Identity-preserving 恢复需要 staging/History 设计。
+- `SetBlockKind` 只支持叶子块；容器结构替换不在本批。
+- Rule 表尚未接入 Transaction；`Editor::dispatch` 仍只执行 Move 规则。
+- SplitBlock/JoinBlocks 与 PositionMapping 尚未实现。
+
+### 下一步
+
+- 5.4：PositionMapping 原语（Text/Inline/Block/Split/Join/Move/Normalizer）。
+- 5.5：Enter/Backspace/DeleteForward/Tab/DeleteRange 规则表，接入 Transaction。
+- 5.6：随机 Intent 属性测试与阶段 5 汇总。

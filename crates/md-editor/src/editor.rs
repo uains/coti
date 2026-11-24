@@ -1,7 +1,8 @@
 //! Editor state and intent dispatch.
 
 use md_document::{
-    Affinity, Anchor, DocPos, Document, Marks, Selection, SelectionKind, SelectionSet,
+    Affinity, Anchor, DocPos, Document, DocumentSnapshot, Marks, Selection, SelectionKind,
+    SelectionSet,
 };
 
 use crate::intent::MoveDirection;
@@ -78,6 +79,18 @@ impl Editor {
     #[must_use]
     pub fn document(&self) -> &Document {
         &self.document
+    }
+
+    pub(crate) fn document_mut(&mut self) -> &mut Document {
+        &mut self.document
+    }
+
+    pub(crate) fn restore_document(&mut self, snapshot: DocumentSnapshot) {
+        self.document.restore(snapshot);
+    }
+
+    pub(crate) fn bump_document_revision(&mut self) {
+        self.document_revision += 1;
     }
 
     /// Returns the current selection set.
