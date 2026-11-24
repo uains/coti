@@ -18,6 +18,10 @@ impl RuleId {
     pub const MOVE_DOC_START: Self = Self(0x0103);
     /// Move to document end.
     pub const MOVE_DOC_END: Self = Self(0x0104);
+    /// Insert literal text.
+    pub const INSERT_TEXT: Self = Self(0x0201);
+    /// Delete backward by grapheme/atom.
+    pub const DELETE_BACKWARD: Self = Self(0x0202);
 
     /// Returns the numeric id.
     #[must_use]
@@ -98,6 +102,14 @@ fn move_doc_end(ctx: &Ctx<'_>) -> bool {
     )
 }
 
+fn insert_text(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::InsertText(_))
+}
+
+fn delete_backward(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::DeleteBackward)
+}
+
 static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::MOVE_LEFT,
@@ -114,6 +126,14 @@ static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::MOVE_DOC_END,
         guard: move_doc_end,
+    },
+    Rule {
+        id: RuleId::INSERT_TEXT,
+        guard: insert_text,
+    },
+    Rule {
+        id: RuleId::DELETE_BACKWARD,
+        guard: delete_backward,
     },
 ];
 

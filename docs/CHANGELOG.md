@@ -881,6 +881,41 @@
 - 5.4：PositionMapping。
 - 5.5：Enter/Backspace/DeleteForward/Tab/DeleteRange 规则表与夹具。
 
+## 2026-11-24 · 阶段 5 / 步骤 5.4～5.5（第一批）：PositionMapping 与文本规则
+
+**状态：** 5.4 基础完成；5.5 部分完成；阶段 5 仍在进行中。
+
+### 变更
+
+- 新增 `PositionMapping`、`MappingOp`、`MappedPosition`：
+  - Insert、Delete、Move 三类线性映射原语。
+  - 顺序组合 `compose`。
+  - 删除范围内的位置标记 `deleted`。
+- 新增 `INSERT_TEXT`、`DELETE_BACKWARD` 两个 RuleId 与 guard。
+- `Editor::dispatch` 接入 Transaction：
+  - `InsertText` 在当前 Range 内执行 `ReplaceText`，光标移到插入文本之后。
+  - `DeleteBackward` 删除前一个 grapheme/atom；非折叠选区删除整个范围。
+- 新增 8 个 editor/mapping 测试；`md-editor` 目前 44 个测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：193 个测试通过。
+  - `md-editor` 44 个测试。
+
+### 设计说明
+
+- PositionMapping 当前是线性全局原语，尚未与 Block Split/Join、Normalizer 变更组合。
+- Insert/Delete 只支持同一叶子内的 Range；跨块编辑返回 `InvalidIntent`。
+- 文本插入使用 Transaction；但 Transaction 尚未发布 PositionMapping，Editor 直接按长度移动光标。
+- Rule 表已开始接入 Transaction，但 Enter/DeleteForward/Tab/DeleteRange/List/Quote/Table 规则仍未实现。
+
+### 下一步
+
+- 5.5 第二批：Enter、DeleteForward、DeleteRange、Tab 与列表/引用规则。
+- 5.6：随机 Intent 属性测试、History 接口准备、阶段 5 汇总。
+
 ## 2026-11-24 · 阶段 5 / 步骤 5.2～5.3：Operation 与 Transaction
 
 **状态：** 已完成；阶段 5 仍在进行中。

@@ -1439,15 +1439,15 @@ docs/
 
 ### 阶段 5：`md-editor` 编辑内核（进行中）
 
-**当前进度：** 5.1～5.3 完成；阶段 5 未完成。
+**当前进度：** 5.1～5.3 完成，5.4 基础完成，5.5 部分完成；阶段 5 未完成。
 
 | 步骤 | 状态 | 产物 |
 |---|---|---|
 | 5.1 Intent / Editor / Rule 表 | 完成 | `Intent`、`Editor`、`EditorConfig`、`Composition`、`RuleId`、静态 Move 规则 |
 | 5.2 Operation | 完成 | ReplaceText/SetInline/SetRaw/Insert/Remove/Move/SetKind + inverse |
 | 5.3 Transaction | 完成 | 快照回滚、base revision、validate、ChangeSet |
-| 5.4 PositionMapping | 未开始 | 映射原语与组合 |
-| 5.5 Rule Table | 未开始 | Enter/Backspace/Delete/Tab/DeleteRange |
+| 5.4 PositionMapping | 部分完成 | Insert/Delete/Move 线性映射与组合 |
+| 5.5 Rule Table | 部分完成 | InsertText/DeleteBackward 已接入 Transaction |
 | 5.6 属性测试 | 未开始 | 随机 Intent、选区映射、回滚 |
 
 #### 当前接口
@@ -1463,8 +1463,8 @@ docs/
 
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets -- -D warnings`：通过。
-- `cargo test --workspace`：185 个测试通过。
-  - `md-editor` 36 个测试。
+- `cargo test --workspace`：193 个测试通过。
+  - `md-editor` 44 个测试。
 - Move 规则覆盖：每条 RuleId 3 个以上用例；grapheme、CJK、Atom、跨叶、DocStart/DocEnd、扩展选区。
 - Operation/Transaction 测试覆盖 inverse、成功提交、空事务、陈旧 revision、操作失败/validate 失败回滚。
 

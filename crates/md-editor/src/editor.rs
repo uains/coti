@@ -1,5 +1,6 @@
 //! Editor state and intent dispatch.
 
+use md_core::{TextOffset, TextRange};
 use md_document::{
     Affinity, Anchor, DocPos, Document, DocumentSnapshot, Marks, Selection, SelectionKind,
     SelectionSet,
@@ -7,7 +8,7 @@ use md_document::{
 
 use crate::intent::MoveDirection;
 use crate::rule::{self, RuleId};
-use crate::{EditorError, EditorResult, Intent};
+use crate::{EditorError, EditorResult, Intent, Operation, Transaction};
 
 /// Editor configuration that affects headless behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,6 +154,21 @@ impl Editor {
                 message: format!("no rule matched {}", intent.name()),
             })?;
 
+        if rule_id == RuleId::INSERT_TEXT {
+            let Intent::InsertText(text) = intent else {
+                return Err(EditorError::InvalidIntent {
+                    message: "insert rule requires InsertText".to_owned(),
+                });
+            };
+            self.insert_text(&text)?;
+            return Ok(rule_id);
+        }
+
+        if rule_id == RuleId::DELETE_BACKWARD {
+            self.delete_backward()?;
+            return Ok(rule_id);
+        }
+
         if rule_id == RuleId::MOVE_LEFT
             || rule_id == RuleId::MOVE_RIGHT
             || rule_id == RuleId::MOVE_DOC_START
@@ -170,6 +186,98 @@ impl Editor {
         Err(EditorError::InvalidIntent {
             message: format!("rule {rule_id} has no executor"),
         })
+    }
+
+    fn insert_text(&mut self, text: &str) -> EditorResult<()> {
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return Err(EditorError::InvalidIntent {
+                message: "insert requires a selection".to_owned(),
+            });
+        };
+        if !matches!(selection.kind, SelectionKind::Range) {
+            return Err(EditorError::InvalidIntent {
+                message: "insert only supports range selections".to_owned(),
+            });
+        }
+
+        let (block_id, range) = self.primary_local_range(selection.start(), selection.end())?;
+        let marks = self.pending_marks.clone().unwrap_or_else(Marks::plain);
+        let operation = Operation::ReplaceText {
+            block_id,
+            range,
+            text: text.to_owned(),
+            marks,
+        };
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(operation);
+        transaction.apply(self)?;
+
+        let new_pos = DocPos::new(selection.start().get() + text.len());
+        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(())
+    }
+
+    fn delete_backward(&mut self) -> EditorResult<()> {
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return Err(EditorError::InvalidIntent {
+                message: "delete requires a selection".to_owned(),
+            });
+        };
+        if !matches!(selection.kind, SelectionKind::Range) {
+            return Err(EditorError::InvalidIntent {
+                message: "delete only supports range selections".to_owned(),
+            });
+        }
+
+        let (from, to) = if selection.is_collapsed() {
+            let Some(previous) = self
+                .document
+                .index()
+                .prev_cursor(&self.document, selection.head.pos)
+            else {
+                return Ok(());
+            };
+            (previous, selection.head.pos)
+        } else {
+            (selection.start(), selection.end())
+        };
+
+        let (block_id, range) = self.primary_local_range(from, to)?;
+        let operation = Operation::ReplaceText {
+            block_id,
+            range,
+            text: String::new(),
+            marks: Marks::plain(),
+        };
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(operation);
+        transaction.apply(self)?;
+
+        self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(())
+    }
+
+    fn primary_local_range(
+        &self,
+        from: DocPos,
+        to: DocPos,
+    ) -> EditorResult<(md_document::BlockId, TextRange)> {
+        let index = self.document.index();
+        let start = index.resolve_position(&self.document, from, Affinity::Downstream)?;
+        let end = index.resolve_position(&self.document, to, Affinity::Downstream)?;
+        if start.block_id != end.block_id {
+            return Err(EditorError::InvalidIntent {
+                message: "editing across blocks is not implemented".to_owned(),
+            });
+        }
+        Ok((
+            start.block_id,
+            TextRange::new(TextOffset::new(start.offset), TextOffset::new(end.offset)),
+        ))
     }
 
     fn apply_move(&mut self, direction: MoveDirection, extend: bool) -> EditorResult<()> {
@@ -432,5 +540,50 @@ mod tests {
         assert_eq!(editor.composition(), None);
         assert_eq!(editor.pending_marks(), None);
         assert_eq!(Composition::default().text, "");
+    }
+
+    #[test]
+    fn insert_text_rule_edits_and_moves_cursor() {
+        let mut editor = editor_at(0);
+        let rule = editor.dispatch(Intent::InsertText("x".to_owned())).unwrap();
+        assert_eq!(rule, RuleId::INSERT_TEXT);
+        assert_eq!(editor.document_revision(), 1);
+        let root = editor.document().root_children()[0];
+        assert_eq!(editor.document().kind(root).unwrap().leaf_len(), Some(1));
+        assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn delete_backward_rule_removes_previous_grapheme() {
+        let mut editor = editor_at(2);
+        let rule = editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert_eq!(rule, RuleId::DELETE_BACKWARD);
+        assert_eq!(editor.document_revision(), 1);
+        let block = editor.document().root_children()[1];
+        assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(3));
+        assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn delete_backward_at_start_is_noop() {
+        let mut editor = editor_at(0);
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        assert_eq!(editor.document_revision(), 0);
+        assert_eq!(head(&editor), DocPos::ZERO);
+    }
+
+    #[test]
+    fn delete_backward_removes_selected_range() {
+        let mut editor = editor_at(2);
+        editor
+            .set_selection(SelectionSet::new(Selection::range(
+                Anchor::new(DocPos::new(1), Affinity::Upstream),
+                Anchor::new(DocPos::new(2), Affinity::Upstream),
+            )))
+            .unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let block = editor.document().root_children()[1];
+        assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(3));
+        assert_eq!(head(&editor), DocPos::new(1));
     }
 }

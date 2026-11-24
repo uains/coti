@@ -6,6 +6,7 @@
 mod editor;
 mod error;
 mod intent;
+mod mapping;
 mod operation;
 mod rule;
 mod transaction;
@@ -13,6 +14,7 @@ mod transaction;
 pub use editor::{Composition, Editor, EditorConfig};
 pub use error::{EditorError, EditorResult};
 pub use intent::{BlockStyle, Intent, MoveDirection};
+pub use mapping::{MappedPosition, MappingOp, PositionMapping};
 pub use operation::{AppliedOperation, Operation};
 pub use rule::{Ctx, Rule, RuleId};
 pub use transaction::{ChangeSet, Transaction};
