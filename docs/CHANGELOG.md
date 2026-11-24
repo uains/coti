@@ -603,3 +603,42 @@
 ### 下一步
 
 - 3.3：`Anchor`、`Selection`、`SelectionSet`、Node/TableCells 选择与多选区校验。
+
+## 2026-11-24 · 阶段 3 / 步骤 3.3：Selection 与 SelectionSet
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `Anchor`、`CellPos`、`SelectionKind`、`Selection`。
+- 支持三种选择：
+  - `Range`：线性文本范围，保留 anchor/head 方向。
+  - `Node(BlockId)`：整块选择。
+  - `TableCells { table, start, end }`：表格单元格矩形范围。
+- 新增 `SelectionSet`：
+  - `new`、`from_selections`、`push`。
+  - `sort_descending` 按 DocPos 倒序排序，并保持 primary 指向原选择。
+  - `primary`、`primary_selection`、`selections`、`iter`、`set_primary`。
+  - `validate` 校验空集、primary、每个 Selection、排序与 Range 重叠。
+- 新增 `SelectionError` 与 `SelectionResult`。
+- `Range` 校验通过 `DocumentIndex::resolve_position` 拒绝越界和非法 UTF-8/Atom 边界。
+- `TableCells` 校验 table 存在、是 Table、行列在 `aligns/rows` 范围内、start ≤ end。
+- 新增 7 个 Selection 测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：126 个测试通过（`md-document` 70 个单元测试 + 3 个属性测试）。
+
+### 设计说明
+
+- `Node` / `TableCells` 的 anchor/head 使用 `DocPos::ZERO` 占位，不参与其语义校验；真正语义由 kind 决定。
+- `TableCells` 增加 `table: BlockId`，否则无法在只有行列坐标时定位所属表格；这是对设计示例的必要补充。
+- `SelectionSet` 排序后保持 primary 指向原 primary 选择，而不是简单保留原索引。
+- 多选区重叠只对 `Range` 之间强制检查；Node/TableCells 与 Range 的交叉语义留给 Editor policy。
+- `Selection` 使用 `f32 goal_x`，因此只实现 `PartialEq`，不实现 `Eq`。
+
+### 下一步
+
+- 3.4：位置/选区属性测试，覆盖空文档、空段落、中文、Atom、多层 Quote/List/Table，以及阶段 3 文档汇总。

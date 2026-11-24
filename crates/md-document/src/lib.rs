@@ -12,6 +12,7 @@ mod id;
 mod index;
 mod inline;
 mod position;
+mod selection;
 
 pub use arena::NodeArena;
 pub use block::{Align, BlockKind, BlockNode, FenceStyle};
@@ -23,3 +24,6 @@ pub use inline::{
     AtomKind, ImageRef, InlineContent, InlineNormalizeChange, LinkRef, MarkFlags, Marks, Run,
 };
 pub use position::{Affinity, BlockGapPosition, DocPos, Position};
+pub use selection::{
+    Anchor, CellPos, Selection, SelectionError, SelectionKind, SelectionResult, SelectionSet,
+};
