@@ -686,6 +686,7 @@ impl Render for CotiView {
 
         let body = div()
             .relative()
+            .w(px(0.0))
             .flex_1()
             .h_full()
             .overflow_hidden()
@@ -695,12 +696,13 @@ impl Render for CotiView {
             .on_scroll(cx.listener(Self::on_scroll))
             .child(DocumentElement { view: cx.entity() });
 
-        let mut content_row = div().flex_1().w_full().flex().overflow_hidden().child(body);
+        let mut content_row = div().flex_1().w_full().flex().overflow_hidden();
         if self.outline_open {
             let items = features::build_outline(self.window.state.editor().document());
             let mut panel = div()
                 .h_full()
                 .w(px(240.0))
+                .flex_none()
                 .flex()
                 .flex_col()
                 .p_2()
@@ -746,6 +748,7 @@ impl Render for CotiView {
             }
             content_row = content_row.child(panel);
         }
+        content_row = content_row.child(body);
 
         let status = features::status_bar(
             self.window.state.editor().document(),
