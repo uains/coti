@@ -73,13 +73,15 @@ impl Builder {
             Event::End(tag) => {
                 self.end(tag, range.end)?;
             }
-            Event::Text(text) => self.text(&text),
+            Event::Text(text) => self.text(&text, range.start)?,
             Event::Code(code) => {
+                self.ensure_inline_target(range.start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.code(&code);
                 }
             }
             Event::InlineMath(math) => {
+                self.ensure_inline_target(range.start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.atom(md_document::AtomKind::InlineMath(TextBuf::from(
                         math.as_ref(),
@@ -94,6 +96,9 @@ impl Builder {
                 self.set_source(id, range)?;
             }
             Event::Html(html) | Event::InlineHtml(html) => {
+                if self.inline.is_none() && !self.has_raw_target() {
+                    self.ensure_inline_target(range.start)?;
+                }
                 if let Some(inline) = self.inline.as_mut() {
                     inline.text(&html);
                 } else if let Some(id) = self.open.last().map(|open| open.id)
@@ -103,16 +108,19 @@ impl Builder {
                 }
             }
             Event::FootnoteReference(label) => {
+                self.ensure_inline_target(range.start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.atom(md_document::AtomKind::FootnoteRef(label.to_string()));
                 }
             }
             Event::SoftBreak => {
+                self.ensure_inline_target(range.start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.atom(md_document::AtomKind::SoftBreak);
                 }
             }
             Event::HardBreak => {
+                self.ensure_inline_target(range.start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.atom(md_document::AtomKind::HardBreak);
                 }
@@ -199,27 +207,34 @@ impl Builder {
                 start,
             ),
             Tag::Emphasis => {
+                self.ensure_inline_target(start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.start_flag(MarkFlags::EMPHASIS);
                 }
                 Ok(())
             }
             Tag::Strong => {
+                self.ensure_inline_target(start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.start_flag(MarkFlags::STRONG);
                 }
                 Ok(())
             }
             Tag::Strikethrough => {
+                self.ensure_inline_target(start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.start_flag(MarkFlags::STRIKE);
                 }
                 Ok(())
             }
-            Tag::Superscript | Tag::Subscript => Ok(()),
+            Tag::Superscript | Tag::Subscript => {
+                self.ensure_inline_target(start)?;
+                Ok(())
+            }
             Tag::Link {
                 dest_url, title, ..
             } => {
+                self.ensure_inline_target(start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.start_link(dest_url.to_string(), title.to_string());
                 }
@@ -228,6 +243,7 @@ impl Builder {
             Tag::Image {
                 dest_url, title, ..
             } => {
+                self.ensure_inline_target(start)?;
                 if let Some(inline) = self.inline.as_mut() {
                     inline.start_image(dest_url.to_string(), title.to_string());
                 }
@@ -269,7 +285,10 @@ impl Builder {
         }
     }
 
-    fn text(&mut self, text: &str) {
+    fn text(&mut self, text: &str, start: usize) -> MarkdownResult<()> {
+        if self.inline.is_none() && !self.has_raw_target() {
+            self.ensure_inline_target(start)?;
+        }
         if let Some(inline) = self.inline.as_mut() {
             inline.text(text);
         } else if let Some(id) = self.open.last().map(|open| open.id)
@@ -277,6 +296,50 @@ impl Builder {
         {
             raw.append(text);
         }
+        Ok(())
+    }
+
+    fn has_raw_target(&self) -> bool {
+        self.open
+            .last()
+            .and_then(|open| self.document.kind(open.id))
+            .is_some_and(BlockKind::is_raw)
+    }
+
+    fn ensure_inline_target(&mut self, start: usize) -> MarkdownResult<bool> {
+        if self.inline.is_some() {
+            return Ok(true);
+        }
+        if self.has_raw_target() {
+            return Ok(false);
+        }
+
+        let Some(parent) = self.containers.last().copied() else {
+            return Ok(false);
+        };
+        let id = self
+            .document
+            .append_block(Some(parent), BlockKind::Paragraph(InlineContent::new()))?;
+        self.open.push(OpenBlock { id, start });
+        self.inline = Some(InlineBuilder::new());
+        Ok(true)
+    }
+
+    fn finish_container(&mut self, end: usize) -> MarkdownResult<()> {
+        if self.inline.is_some() {
+            self.finish_inline(end)?;
+        }
+        let Some(open) = self.open.pop() else {
+            return Err(MarkdownError::Parse {
+                message: "unexpected container end event".to_owned(),
+            });
+        };
+        if self.containers.last() == Some(&open.id) {
+            self.containers.pop();
+        }
+        self.set_source(open.id, open.start..end)?;
+        self.ensure_container_child(open.id)?;
+        Ok(())
     }
 
     fn start_inline(&mut self, kind: BlockKind, start: usize) -> MarkdownResult<()> {
@@ -307,20 +370,6 @@ impl Builder {
         let id = self.document.append_block(parent, kind)?;
         self.containers.push(id);
         self.open.push(OpenBlock { id, start });
-        Ok(())
-    }
-
-    fn finish_container(&mut self, end: usize) -> MarkdownResult<()> {
-        let Some(open) = self.open.pop() else {
-            return Err(MarkdownError::Parse {
-                message: "unexpected container end event".to_owned(),
-            });
-        };
-        if self.containers.last() == Some(&open.id) {
-            self.containers.pop();
-        }
-        self.set_source(open.id, open.start..end)?;
-        self.ensure_container_child(open.id)?;
         Ok(())
     }
 

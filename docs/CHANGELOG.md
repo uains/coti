@@ -757,3 +757,44 @@
 ### 下一步
 
 - 4.3：Serializer：Inline Writer、Block Writer、Marks 输出、列表序号、代码围栏、表格、Raw、dirty 重新序列化。
+
+## 2026-11-24 · 阶段 4 / 步骤 4.3：Markdown Serializer
+
+**状态：** 已完成。
+
+### 变更
+
+- `serializer` 从占位替换为规范化 Markdown 输出。
+- 支持 Block：
+  - Paragraph、Heading、TableCell。
+  - CodeBlock（围栏字符/长度、语言、代码内容）。
+  - HtmlBlock、MathBlock、FrontMatter（Raw）。
+  - Quote（逐行 `> ` 前缀）。
+  - List/ListItem（有序序号、无序 `- `、task checkbox、嵌套缩进）。
+  - Table/TableRow（表头、对齐分隔行、单元格）。
+  - ThematicBreak、ImageBlock。
+- 支持 Inline：
+  - Strong、Emphasis、Strike、Highlight、Underline、Code。
+  - Link 与图片 Atom。
+  - HardBreak、SoftBreak、InlineMath、FootnoteRef。
+  - 文本转义与代码 span 反引号长度选择。
+- `MarkdownDocument::serialize` 的 dirty 路径改为调用 Serializer；未编辑路径仍逐字节返回原文。
+- 新增 3 个 Serializer 测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：141 个测试通过（`md-markdown` 10 个）。
+- Parser 的 5 个测试继续通过 `Document::validate` 与 pristine 字节相等。
+
+### 设计说明
+
+- dirty 序列化目前统一走规范 Writer，不读取 SourceHint 的 pristine 片段；等 Editor 能准确标记脏节点后，再启用“未修改子块直接输出原文”。
+- List 的 tight/loose、引用嵌套缩进和 HTML 内联保真仍是近似；阶段 4 后续用夹具暴露并修正。
+- inline image 的 alt 仍未保留；`AtomKind::Image` 只有 ImageRef，需要在后续步骤扩展。
+- 代码围栏默认使用反引号，未复用原 fence 字符；SourceHint.style.code_fence 已预留。
+
+### 下一步
+
+- 4.4：生成 200+ Markdown 夹具，建立 AC-01 逐字节保真测试与 parser/serializer 回归集。

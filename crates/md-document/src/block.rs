@@ -191,6 +191,15 @@ impl BlockKind {
         !self.is_container()
     }
 
+    /// Returns `true` when this kind stores raw text directly.
+    #[must_use]
+    pub const fn is_raw(&self) -> bool {
+        matches!(
+            self,
+            Self::CodeBlock { .. } | Self::HtmlBlock(_) | Self::MathBlock(_) | Self::FrontMatter(_)
+        )
+    }
+
     /// Returns `true` when this kind owns child block ids.
     #[must_use]
     pub fn is_container(&self) -> bool {
