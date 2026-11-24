@@ -134,17 +134,35 @@ impl LayoutTree {
     /// last character instead of joining the next block.
     #[must_use]
     pub fn position_with_affinity(&self, point: Point) -> Option<(DocPos, Affinity)> {
-        let leaf = self.leaf_at_point(point)?;
+        let leaf = self
+            .leaf_at_point(point)
+            .or_else(|| self.nearest_leaf(point.y))?;
         let line = leaf
             .lines
             .iter()
             .find(|line| point.y >= line.rect.top() && point.y < line.rect.bottom())
-            .or_else(|| leaf.lines.last())?;
+            .or_else(|| {
+                leaf.lines.iter().min_by(|left, right| {
+                    let left_distance = if point.y < left.rect.top() {
+                        left.rect.top() - point.y
+                    } else {
+                        (point.y - left.rect.bottom()).max(0.0)
+                    };
+                    let right_distance = if point.y < right.rect.top() {
+                        right.rect.top() - point.y
+                    } else {
+                        (point.y - right.rect.bottom()).max(0.0)
+                    };
+                    left_distance.total_cmp(&right_distance)
+                })
+            })?;
         let local = line.offset_at_x(point.x);
         let leaf_index = self.index.leaf_index(leaf.id)?;
         let start = self.index.leaf_start(leaf_index)?;
         let length = self.index.leaf_len(leaf_index)?;
-        let affinity = if local == length && leaf_index + 1 < self.index.leaf_order().len() {
+        let affinity = if point.x >= line.rect.right()
+            || (local == length && leaf_index + 1 < self.index.leaf_order().len())
+        {
             Affinity::Upstream
         } else {
             Affinity::Downstream
@@ -178,12 +196,28 @@ impl LayoutTree {
     /// Returns the document position nearest to a point.
     #[must_use]
     pub fn position_at_point(&self, point: Point) -> Option<DocPos> {
-        let leaf = self.leaf_at_point(point)?;
+        let leaf = self
+            .leaf_at_point(point)
+            .or_else(|| self.nearest_leaf(point.y))?;
         let line = leaf
             .lines
             .iter()
             .find(|line| point.y >= line.rect.top() && point.y < line.rect.bottom())
-            .or_else(|| leaf.lines.last())?;
+            .or_else(|| {
+                leaf.lines.iter().min_by(|left, right| {
+                    let left_distance = if point.y < left.rect.top() {
+                        left.rect.top() - point.y
+                    } else {
+                        (point.y - left.rect.bottom()).max(0.0)
+                    };
+                    let right_distance = if point.y < right.rect.top() {
+                        right.rect.top() - point.y
+                    } else {
+                        (point.y - right.rect.bottom()).max(0.0)
+                    };
+                    left_distance.total_cmp(&right_distance)
+                })
+            })?;
         let local = line.offset_at_x(point.x);
         let leaf_index = self.index.leaf_index(leaf.id)?;
         let start = self.index.leaf_start(leaf_index)?;
@@ -263,6 +297,32 @@ impl LayoutTree {
         }
         visit(&self.blocks, expanded, &mut visible);
         visible
+    }
+
+    fn nearest_leaf(&self, y: f32) -> Option<&BlockLayout> {
+        fn visit(blocks: &[BlockLayout], y: f32) -> Option<(&BlockLayout, f32)> {
+            let mut best = None;
+            for block in blocks {
+                if block.is_leaf() {
+                    let distance = if y < block.rect.top() {
+                        block.rect.top() - y
+                    } else if y > block.rect.bottom() {
+                        y - block.rect.bottom()
+                    } else {
+                        0.0
+                    };
+                    if best.is_none_or(|(_, current): (&BlockLayout, f32)| distance < current) {
+                        best = Some((block, distance));
+                    }
+                } else if let Some(found) = visit(&block.children, y)
+                    && best.is_none_or(|(_, current)| found.1 < current)
+                {
+                    best = Some(found);
+                }
+            }
+            best
+        }
+        visit(&self.blocks, y).map(|(block, _)| block)
     }
 
     fn leaf_at_point(&self, point: Point) -> Option<&BlockLayout> {
@@ -823,6 +883,21 @@ mod tests {
 
     fn paragraph(text: &str) -> BlockKind {
         BlockKind::Paragraph(InlineContent::from_text(text))
+    }
+
+    #[test]
+    fn click_beyond_line_end_still_hits_nearest_line_end() {
+        let mut document = Document::new();
+        document
+            .set_inline_content(document.root_children()[0], InlineContent::from_text("abc"))
+            .unwrap();
+        document.append_block(None, paragraph("def")).unwrap();
+        let tree = LayoutTree::full(&document, env(400.0));
+        let line = tree.blocks[0].lines.last().unwrap();
+        let point = Point::new(line.rect.right() + 20.0, line.rect.top() + 1.0);
+        let (position, affinity) = tree.position_with_affinity(point).unwrap();
+        assert_eq!(position, DocPos::new(3));
+        assert_eq!(affinity, Affinity::Upstream);
     }
 
     #[test]

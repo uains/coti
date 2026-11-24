@@ -1453,3 +1453,12 @@
 - 修复列表后普通段落开头 Backspace 误删上一列表项字符。
 - 新增点击行尾 affinity、左右移动到列表边界、列表后段落边界、连续删除等测试。
 - 311 个测试通过。
+
+## 2026-11-24 · 修复行末点击偶发 Downstream 导致合并下一行
+
+- 布局点击增加“纵向最近行”回退，块间空隙/行尾外侧不再命中失败而保留旧 selection。
+- 点击 x 超过行 right 边界强制 Upstream。
+- 左移/右移按落点区分 Upstream/Downstream。
+- Backspace/Enter/InsertText/ChangeIndent 统一使用 selection affinity。
+- 新增点击行尾外侧、左右移动列表边界、列表后段落边界测试。
+- 312 个测试通过。
