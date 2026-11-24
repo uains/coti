@@ -20,6 +20,8 @@ impl Color {
 pub struct Theme {
     /// Page background.
     pub background: Color,
+    /// Surface background (title bar, status bar).
+    pub surface: Color,
     /// Body text.
     pub text: Color,
     /// Heading text.
@@ -56,6 +58,7 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             background: Color(0xFFFF_FFFF),
+            surface: Color(0xF4F5_F8FF),
             text: Color(0x2021_24FF),
             heading: Color(0x1416_1AFF),
             muted: Color(0x6B72_80FF),

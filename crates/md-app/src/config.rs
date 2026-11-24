@@ -26,6 +26,7 @@ impl ThemeKind {
         match self {
             Self::Ink => {
                 theme.background = Color(0x1B1D_22FF);
+                theme.surface = Color(0x2023_2AFF);
                 theme.text = Color(0xE6E8_EEFF);
                 theme.heading = Color(0xFFFF_FFFF);
                 theme.muted = Color(0x9AA3_B2FF);
@@ -42,6 +43,7 @@ impl ThemeKind {
             Self::Paper => {}
             Self::Contrast => {
                 theme.background = Color::WHITE;
+                theme.surface = Color(0xF0F0_F0FF);
                 theme.text = Color::BLACK;
                 theme.heading = Color::BLACK;
                 theme.selection = Color(0xFFE0_00FF);

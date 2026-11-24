@@ -4,8 +4,9 @@ use gpui::{
     App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle, FontWeight,
     GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, Pixels,
-    Render, ScrollDelta, ScrollEvent, SharedString, Style, Styled, TextAlign, TextRun, Window,
-    WindowBounds, WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size,
+    Render, ScrollDelta, ScrollEvent, SharedString, StatefulInteractiveElement, Style, Styled,
+    TextAlign, TextRun, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
+    WindowTextSystem, div, fill, point, px, relative, rgba, size,
 };
 use gpui_platform::application;
 use md_core::Size;
@@ -277,17 +278,92 @@ impl Render for CotiView {
         self.window.relayout_with(&mut measurer);
         window.set_window_title(&self.window.state.title());
         let background = rgba(self.window.view.theme.background.0);
-        div()
-            .size_full()
+        let surface = rgba(self.window.view.theme.surface.0);
+        let border = rgba(self.window.view.theme.border.0);
+        let muted = rgba(self.window.view.theme.muted.0);
+        let title = self.window.state.title();
+
+        let minimize = div()
+            .id("window-minimize")
+            .h_full()
+            .w(px(44.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .text_color(muted)
+            .hover(|style| style.bg(rgba(0x8080_8022)))
+            .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
+            .child("—");
+        let maximize = div()
+            .id("window-maximize")
+            .h_full()
+            .w(px(44.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .text_color(muted)
+            .hover(|style| style.bg(rgba(0x8080_8022)))
+            .on_click(cx.listener(|_, _, window, _| window.zoom_window()))
+            .child("□");
+        let close = div()
+            .id("window-close")
+            .h_full()
+            .w(px(44.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .text_color(muted)
+            .hover(|style| style.bg(rgba(0xE811_2322)))
+            .on_click(cx.listener(|_, _, window, _| window.remove_window()))
+            .child("×");
+        let drag_area = div().id("titlebar-drag").flex_1().h_full().on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|_, _, window, _| window.start_window_move()),
+        );
+
+        let titlebar = div()
+            .h(px(36.0))
+            .w_full()
+            .flex()
+            .items_center()
+            .bg(surface)
+            .border_b_1()
+            .border_color(border)
+            .child(
+                div()
+                    .px_3()
+                    .text_size(px(13.0))
+                    .text_color(muted)
+                    .child(title),
+            )
+            .child(drag_area)
+            .child(minimize)
+            .child(maximize)
+            .child(close);
+
+        let body = div()
+            .relative()
+            .flex_1()
+            .w_full()
             .overflow_hidden()
-            .bg(background)
-            .track_focus(&self.focus_handle)
-            .on_key_down(cx.listener(Self::on_key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll(cx.listener(Self::on_scroll))
-            .child(DocumentElement { view: cx.entity() })
+            .child(DocumentElement { view: cx.entity() });
+
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(background)
+            .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(Self::on_key_down))
+            .child(titlebar)
+            .child(body)
     }
 }
 
@@ -590,11 +666,17 @@ pub fn run_gui_with_path(path: Option<std::path::PathBuf>) -> anyhow::Result<()>
         let bounds = Bounds::centered(None, size(px(1000.0), px(760.0)), cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_decorations: Some(WindowDecorations::Client),
+            titlebar: Some(TitlebarOptions {
+                title: None,
+                appears_transparent: true,
+                traffic_light_position: None,
+            }),
             ..Default::default()
         };
         let path = path.clone();
         cx.open_window(options, |_, cx| {
-            cx.new(|cx| CotiView::from_path(path, Size::new(1000.0, 760.0), cx))
+            cx.new(|cx| CotiView::from_path(path, Size::new(1000.0, 724.0), cx))
         })
         .expect("create Coti window");
         cx.activate(true);
