@@ -1407,3 +1407,13 @@
 - 删除范围回退：跨越块边界时截断到起始块末尾，避免 “editing across blocks”。
 - 新增真实教程文档回归测试，覆盖“教程/单元/代码块”末尾删除。
 - 300 个测试通过。
+
+## 2026-11-24 · 列表项开头 Backspace 合并/反列表
+
+- 列表项开头 Backspace：
+  - 非第一项：合并到前一个 ListItem 的最后段落，InlineContent normalize 后写回。
+  - 第一项：反列表为 Paragraph；若列表还有其他项则保留列表。
+  - 空项：继续走 RemoveListItem。
+- 新增 MergeListItem、UnlistListItem 操作。
+- 新增测试：第二项开头合并、第一项开头反列表。
+- 302 个测试通过。

@@ -51,6 +51,16 @@ pub enum Operation {
         /// Paragraph content for the new item.
         content: InlineContent,
     },
+    /// Unlists the first item of a list into a paragraph.
+    UnlistListItem {
+        /// First list item.
+        id: BlockId,
+    },
+    /// Merges a list item into the previous item.
+    MergeListItem {
+        /// List item to merge.
+        id: BlockId,
+    },
     /// Removes an empty list item; a sole item is replaced by its paragraph.
     RemoveListItem {
         /// List item to remove.
@@ -204,6 +214,106 @@ impl Operation {
                 Ok(AppliedOperation {
                     inverse: Self::RemoveBlock { id: item },
                     affected: vec![item, para],
+                })
+            }
+            Self::UnlistListItem { id } => {
+                let list = document.parent(*id).ok_or_else(|| stale(*id))?;
+                let items = document.children(list).unwrap_or(&[]).to_vec();
+                if items.first() != Some(id) {
+                    return Err(EditorError::InvalidIntent {
+                        message: "only the first list item can be unlisted".to_owned(),
+                    });
+                }
+                let children = document.children(*id).unwrap_or(&[]).to_vec();
+                if children.len() != 1 {
+                    return Err(EditorError::InvalidIntent {
+                        message: "only single-block list items can be unlisted".to_owned(),
+                    });
+                }
+                let content = document
+                    .kind(children[0])
+                    .and_then(BlockKind::inline_content)
+                    .cloned()
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "list item content is not inline".to_owned(),
+                    })?;
+                let container = document.parent(list);
+                let list_index = if let Some(container) = container {
+                    document
+                        .children(container)
+                        .and_then(|children| children.iter().position(|child| *child == list))
+                } else {
+                    document
+                        .root_children()
+                        .iter()
+                        .position(|child| *child == list)
+                }
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "list is not linked from its parent".to_owned(),
+                })?;
+                document.remove_block(*id)?;
+                if document
+                    .children(list)
+                    .is_none_or(|children| children.is_empty())
+                {
+                    document.remove_block(list)?;
+                }
+                let paragraph =
+                    document.insert_block(container, list_index, BlockKind::Paragraph(content))?;
+                Ok(AppliedOperation {
+                    inverse: Self::RemoveBlock { id: paragraph },
+                    affected: vec![paragraph],
+                })
+            }
+            Self::MergeListItem { id } => {
+                let list = document.parent(*id).ok_or_else(|| stale(*id))?;
+                let items = document.children(list).unwrap_or(&[]).to_vec();
+                let index = items.iter().position(|item| item == id).ok_or_else(|| {
+                    EditorError::InvalidIntent {
+                        message: "list item is not linked from its list".to_owned(),
+                    }
+                })?;
+                if index == 0 {
+                    return Err(EditorError::InvalidIntent {
+                        message: "first list item has no previous item".to_owned(),
+                    });
+                }
+                let previous = items[index - 1];
+                let previous_children = document.children(previous).unwrap_or(&[]).to_vec();
+                let current_children = document.children(*id).unwrap_or(&[]).to_vec();
+                if current_children.len() != 1 {
+                    return Err(EditorError::InvalidIntent {
+                        message: "only single-block list items can be merged".to_owned(),
+                    });
+                }
+                let left_id =
+                    *previous_children
+                        .last()
+                        .ok_or_else(|| EditorError::InvalidIntent {
+                            message: "previous list item has no content".to_owned(),
+                        })?;
+                let right_id = current_children[0];
+                let mut left = document
+                    .kind(left_id)
+                    .and_then(BlockKind::inline_content)
+                    .cloned()
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "previous list item is not inline content".to_owned(),
+                    })?;
+                let right = document
+                    .kind(right_id)
+                    .and_then(BlockKind::inline_content)
+                    .cloned()
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "list item content is not inline".to_owned(),
+                    })?;
+                left.append_content(&right);
+                left.normalize();
+                document.set_inline_content(left_id, left)?;
+                document.remove_block(*id)?;
+                Ok(AppliedOperation {
+                    inverse: Self::RemoveBlock { id: *id },
+                    affected: vec![previous, left_id],
                 })
             }
             Self::RemoveListItem { id } => {

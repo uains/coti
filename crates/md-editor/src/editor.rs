@@ -689,6 +689,129 @@ impl Editor {
         Ok(())
     }
 
+    fn unlist_first_list_item(&mut self, block_id: md_document::BlockId) -> EditorResult<bool> {
+        let Some(item) = self.document.parent(block_id) else {
+            return Ok(false);
+        };
+        if !matches!(self.document.kind(item), Some(BlockKind::ListItem { .. }))
+            || self
+                .document
+                .children(item)
+                .is_none_or(|children| children.len() != 1)
+        {
+            return Ok(false);
+        }
+        let Some(list) = self.document.parent(item) else {
+            return Ok(false);
+        };
+        let Some(items) = self.document.children(list) else {
+            return Ok(false);
+        };
+        if items.first() != Some(&item) {
+            return Ok(false);
+        }
+        let Some(first_leaf) = self
+            .document
+            .index()
+            .leaf_order()
+            .iter()
+            .find(|leaf| self.document.is_ancestor(list, **leaf))
+        else {
+            return Ok(false);
+        };
+        let Some(leaf_index) = self.document.index().leaf_index(*first_leaf) else {
+            return Ok(false);
+        };
+        let target = self
+            .document
+            .index()
+            .leaf_start(leaf_index)
+            .map(DocPos::new)
+            .unwrap_or(DocPos::ZERO);
+        let empty = self
+            .document
+            .kind(block_id)
+            .and_then(BlockKind::inline_content)
+            .is_none_or(|content| content.plain_text().is_empty());
+        if empty {
+            return Ok(false);
+        }
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::UnlistListItem { id: item });
+        self.commit(transaction)?;
+        self.selection = SelectionSet::new(Selection::collapsed(target, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(true)
+    }
+
+    fn merge_list_item_into_previous(
+        &mut self,
+        block_id: md_document::BlockId,
+    ) -> EditorResult<bool> {
+        let Some(item) = self.document.parent(block_id) else {
+            return Ok(false);
+        };
+        if !matches!(self.document.kind(item), Some(BlockKind::ListItem { .. }))
+            || self
+                .document
+                .children(item)
+                .is_none_or(|children| children.len() != 1)
+        {
+            return Ok(false);
+        }
+        let Some(list) = self.document.parent(item) else {
+            return Ok(false);
+        };
+        let Some(items) = self.document.children(list) else {
+            return Ok(false);
+        };
+        let Some(item_index) = items.iter().position(|id| *id == item) else {
+            return Ok(false);
+        };
+        if item_index == 0 {
+            return Ok(false);
+        }
+        let previous = items[item_index - 1];
+        let Some(previous_children) = self.document.children(previous) else {
+            return Ok(false);
+        };
+        let Some(last) = previous_children.last().copied() else {
+            return Ok(false);
+        };
+        if self
+            .document
+            .kind(last)
+            .and_then(BlockKind::inline_content)
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        let index = self.document.index();
+        let mut target = None;
+        for leaf in index.leaf_order().iter().rev() {
+            if self.document.is_ancestor(previous, *leaf)
+                && let Some(leaf_index) = index.leaf_index(*leaf)
+                && let Some((start, len)) =
+                    index.leaf_start(leaf_index).zip(index.leaf_len(leaf_index))
+            {
+                target = Some(DocPos::new(start + len));
+                break;
+            }
+        }
+        let target = target.unwrap_or(DocPos::ZERO);
+
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::MergeListItem { id: item });
+        self.commit(transaction)?;
+        let pos = DocPos::new(target.get().min(self.document.index().doc_length()));
+        self.selection = SelectionSet::new(Selection::collapsed(pos, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(true)
+    }
+
     fn remove_empty_list_item(&mut self, block_id: md_document::BlockId) -> EditorResult<bool> {
         let Some(item) = self.document.parent(block_id) else {
             return Ok(false);
@@ -1388,7 +1511,15 @@ impl Editor {
                     None
                 };
 
+            if resolved.offset == 0 && self.merge_list_item_into_previous(resolved.block_id)? {
+                return Ok(());
+            }
+
             if resolved.offset == 0 && self.remove_empty_list_item(resolved.block_id)? {
+                return Ok(());
+            }
+
+            if resolved.offset == 0 && self.unlist_first_list_item(resolved.block_id)? {
                 return Ok(());
             }
 
@@ -2215,6 +2346,39 @@ mod tests {
         let output = md_markdown::serialize_document(editor.document(), source);
         assert!(output.contains("# \n"), "unexpected output: {output:?}");
         assert!(output.contains("## B"), "unexpected output: {output:?}");
+    }
+
+    #[test]
+    fn backspace_at_first_list_item_start_unlists_it() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(DocPos::ZERO, Affinity::Downstream));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.starts_with("a\n"), "unexpected output: {output:?}");
+        assert!(output.contains("- b"), "unexpected output: {output:?}");
+        assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn backspace_at_list_item_start_merges_previous_item() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let second = index.leaf_order()[1];
+        let start = index.leaf_start(1).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(start),
+            Affinity::Downstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.trim_end() == "- ab", "unexpected output: {output:?}");
+        assert_eq!(head(&editor), DocPos::new(1));
+        assert_eq!(editor.document().root_children().len(), 1);
+        let _ = second;
     }
 
     #[test]
