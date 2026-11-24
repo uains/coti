@@ -415,6 +415,68 @@ mod tests {
     }
 
     #[test]
+    fn enter_at_block_end_places_caret_in_new_empty_block() {
+        use md_document::{
+            Affinity, Anchor, DocPos, Document, InlineContent, Selection, SelectionSet,
+        };
+        use md_editor::Editor;
+        use md_layout::{LayoutEnv, LayoutTree, ResolvedStyle};
+
+        let mut document = Document::new();
+        document
+            .set_inline_content(document.root_children()[0], InlineContent::from_text("a"))
+            .unwrap();
+        document
+            .append_block(
+                None,
+                md_document::BlockKind::Paragraph(InlineContent::from_text("b")),
+            )
+            .unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(DocPos::new(1), Affinity::Upstream));
+        let mut editor = Editor::with_selection(document, selection).unwrap();
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        let head = editor.selection().primary_selection().unwrap().head;
+        let tree = LayoutTree::full(
+            editor.document(),
+            LayoutEnv::new(Size::new(300.0, 200.0), ResolvedStyle::default()),
+        );
+        let caret = tree.caret_rect(head.pos).unwrap();
+        let empty = editor
+            .document()
+            .root_children()
+            .iter()
+            .find(|id| {
+                editor
+                    .document()
+                    .kind(**id)
+                    .and_then(md_document::BlockKind::leaf_len)
+                    == Some(0)
+            })
+            .copied()
+            .unwrap();
+        let empty_layout = tree.block_outer(empty).unwrap();
+        for leaf in editor.document().index().leaf_order() {
+            eprintln!(
+                "leaf={leaf:?} start={:?} len={:?}",
+                editor
+                    .document()
+                    .index()
+                    .leaf_start(editor.document().index().leaf_index(*leaf).unwrap()),
+                editor
+                    .document()
+                    .index()
+                    .leaf_len(editor.document().index().leaf_index(*leaf).unwrap())
+            );
+        }
+        eprintln!(
+            "head={head:?} caret={caret:?} empty={:?}",
+            empty_layout.rect
+        );
+        assert!((caret.top() - empty_layout.rect.top()).abs() < 0.5);
+        let _ = Anchor::new(DocPos::ZERO, Affinity::Downstream);
+    }
+
+    #[test]
     fn atomic_write_replaces_content() {
         let path = unique("atomic");
         atomic_write(&path, b"one").unwrap();

@@ -1295,7 +1295,7 @@ impl Editor {
 
         let index = self.document.index();
         let mut resolved =
-            index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+            index.resolve_position(&self.document, selection.head.pos, selection.head.affinity)?;
         if resolved.offset == 0
             && selection.head.pos.get() > 0
             && let Some(previous) = index.leaf_at(selection.head.pos.get() - 1)
@@ -1433,6 +1433,10 @@ impl Editor {
             }
         }
 
+        eprintln!(
+            "ENTER block={block_id:?} child_index={child_index} root={:?}",
+            self.document.root_children()
+        );
         let mut transaction = Transaction::new(self.document_revision());
         transaction.push(Operation::SetInlineContent {
             block_id,
@@ -1461,6 +1465,10 @@ impl Editor {
             }
         })?;
 
+        eprintln!(
+            "ENTER new_id={new_id:?} index={new_leaf} start={}",
+            new_pos.get()
+        );
         self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
         self.pending_marks = None;
         self.state_revision += 1;
@@ -2321,7 +2329,7 @@ mod tests {
             editor.document().kind(inserted).unwrap().leaf_len(),
             Some(0)
         );
-        assert_eq!(head(&editor), DocPos::new(7));
+        assert_eq!(head(&editor), DocPos::new(6));
     }
 
     #[test]

@@ -1586,3 +1586,11 @@
 - 空段落没有 lines 时，caret_rect 回退到块矩形起点，修复换行后光标跑到下一行首的问题。
 - 新增空段落 caret 测试。
 - 324 个测试通过。
+
+## 2026-11-24 · 修复回车后光标落到下一块
+
+- 根因：`insert_newline` 固定用 `Affinity::Downstream` 解析光标，行末位置被解析成下一块开头，于是清空下一块并新建段落。
+- 改为使用当前 selection 的 affinity：行末 Upstream 拆分当前块，块首 Downstream 拆分下一块。
+- 空段落 caret 回退到块矩形，确保新空行有可见 caret。
+- 新增 `enter_at_block_end_places_caret_in_new_empty_block` 回归测试。
+- 325 个测试通过。
