@@ -256,6 +256,15 @@ impl CotiView {
         self.stop_blink();
     }
 
+    fn close_palette(&mut self) {
+        if self.palette_open {
+            self.palette_open = false;
+            self.palette_active = false;
+            self.palette_marked.clear();
+            self.stop_blink();
+        }
+    }
+
     fn stop_blink(&mut self) {
         self.caret_visible = false;
         self.blink_task = Task::ready(());
@@ -264,10 +273,8 @@ impl CotiView {
     fn reset_blink(&mut self, cx: &mut Context<Self>) {
         self.caret_visible = true;
         self.blink_task = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(1)).await;
             loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(500))
-                    .await;
                 let result = this.update(cx, |this, cx| {
                     this.caret_visible = !this.caret_visible;
                     cx.notify();
@@ -275,6 +282,9 @@ impl CotiView {
                 if result.is_err() {
                     break;
                 }
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
             }
         });
     }
@@ -656,15 +666,20 @@ impl CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.search_open || self.palette_open {
+        if self.search_open {
             return;
+        }
+        if self.palette_open {
+            self.palette_open = false;
+            self.palette_active = false;
+            self.palette_marked.clear();
         }
         self.editor_active = true;
         self.search_active = false;
         self.palette_active = false;
         self.search_marked.clear();
         self.palette_marked.clear();
-        self.stop_blink();
+        self.reset_blink(cx);
         window.focus(&self.focus_handle, cx);
         let point = md_core::Point::new(
             f32::from(event.position.x),
@@ -809,6 +824,7 @@ impl Render for CotiView {
                 .hover(|style| style.bg(rgba(0x8080_8022)))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    this.close_palette();
                     this.menu_open = if this.menu_open == Some(index) {
                         None
                     } else {
@@ -849,6 +865,7 @@ impl Render for CotiView {
                 },
                 muted,
                 cx.listener(|this, _, _, cx| {
+                    this.close_palette();
                     this.outline_open = !this.outline_open;
                     cx.notify();
                 }),
@@ -871,6 +888,7 @@ impl Render for CotiView {
                 "icons/palette.svg",
                 muted,
                 cx.listener(|this, _, _, cx| {
+                    this.close_palette();
                     let next = this.window.state.config().theme.next();
                     this.window.state.config_mut().theme = next;
                     this.window.sync_view();
@@ -1297,6 +1315,7 @@ impl EntityInputHandler for CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.reset_blink(cx);
         match self.input_target() {
             InputTarget::Search => {
                 self.search.query.push_str(text);
@@ -1341,6 +1360,7 @@ impl EntityInputHandler for CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.reset_blink(cx);
         match self.input_target() {
             InputTarget::Search => {
                 self.search_marked = new_text.to_owned();
@@ -1565,7 +1585,7 @@ impl Element for DocumentElement {
                     )));
                 }
                 PaintCommand::Caret { rect, color } => {
-                    if !composing && editor_active {
+                    if !composing && editor_active && view.caret_visible {
                         items.push(PreparedItem::Quad(fill(
                             paint_bounds(bounds, rect, scroll),
                             rgba(color.0),
