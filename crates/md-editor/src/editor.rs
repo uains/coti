@@ -223,6 +223,43 @@ impl Editor {
         let index = self.document.index();
         let resolved =
             index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+
+        if let Some(item) = self.nearest_list_item(resolved.block_id) {
+            let operation = if outdent {
+                Operation::OutdentListItem { id: item }
+            } else {
+                Operation::IndentListItem { id: item }
+            };
+            let mut transaction = Transaction::new(self.document_revision());
+            transaction.push(operation);
+            transaction.apply(self)?;
+
+            let index = self.document.index();
+            let leaf = index
+                .leaf_order()
+                .iter()
+                .find(|leaf| **leaf == item || self.document.is_ancestor(item, **leaf))
+                .copied()
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "list item has no editable leaf".to_owned(),
+                })?;
+            let leaf_index = index
+                .leaf_index(leaf)
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "list item leaf has no index".to_owned(),
+                })?;
+            let pos = index
+                .leaf_start(leaf_index)
+                .map(DocPos::new)
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "list item leaf has no position".to_owned(),
+                })?;
+            self.selection = SelectionSet::new(Selection::collapsed(pos, Affinity::Downstream));
+            self.pending_marks = None;
+            self.state_revision += 1;
+            return Ok(());
+        }
+
         let Some(BlockKind::CodeBlock { text, .. }) =
             self.document.kind(resolved.block_id).cloned()
         else {
@@ -569,6 +606,17 @@ impl Editor {
         self.pending_marks = None;
         self.state_revision += 1;
         Ok(())
+    }
+
+    fn nearest_list_item(&self, block: md_document::BlockId) -> Option<md_document::BlockId> {
+        let mut current = Some(block);
+        while let Some(id) = current {
+            if matches!(self.document.kind(id), Some(BlockKind::ListItem { .. })) {
+                return Some(id);
+            }
+            current = self.document.parent(id);
+        }
+        None
     }
 
     fn primary_local_range(

@@ -1017,3 +1017,13 @@
 - Paragraph/Heading/TableCell：Tab 明确 no-op，遵循设计 T06。
 - ListItem 缩进/反缩进尚未实现，需嵌套 List 结构规则。
 - `md-editor` 56 个测试；全 Workspace 208 个测试通过。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第七批）：ListItem 缩进/反缩进
+
+- 新增 `Operation::IndentListItem` / `OutdentListItem`。
+- Indent：挂到前一同级 ListItem 的末个 List 下；无嵌套 List 时创建同风格 List。
+- Outdent：移动到父 ListItem 之后的祖父 List；旧 List 空时删除。
+- `Document::move_block_allow_empty` 支持结构 Cleanup。
+- Tab 规则识别 ListItem 并使用 Transaction；CodeBlock 行为保留。
+- 首项 Indent 为明确 no-op。
+- `md-editor` 59 个测试；全 Workspace 211 个测试通过。

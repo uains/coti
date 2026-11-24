@@ -77,6 +77,16 @@ pub enum Operation {
         /// Right block.
         right: BlockId,
     },
+    /// Indents a list item under its previous sibling.
+    IndentListItem {
+        /// List item to indent.
+        id: BlockId,
+    },
+    /// Outdents a nested list item to its parent list.
+    OutdentListItem {
+        /// List item to outdent.
+        id: BlockId,
+    },
 }
 
 /// Result of applying an operation.
@@ -212,8 +222,161 @@ impl Operation {
                     affected: vec![*left, *right],
                 })
             }
+            Self::IndentListItem { id } => {
+                indent_list_item(document, *id)?;
+                Ok(AppliedOperation {
+                    inverse: Self::OutdentListItem { id: *id },
+                    affected: vec![*id],
+                })
+            }
+            Self::OutdentListItem { id } => {
+                outdent_list_item(document, *id)?;
+                Ok(AppliedOperation {
+                    inverse: Self::IndentListItem { id: *id },
+                    affected: vec![*id],
+                })
+            }
         }
     }
+}
+
+fn indent_list_item(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    let snapshot = document.snapshot();
+    let result = indent_list_item_inner(document, id);
+    if result.is_err() {
+        document.restore(snapshot);
+    }
+    result
+}
+
+fn indent_list_item_inner(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    if !matches!(document.kind(id), Some(BlockKind::ListItem { .. })) {
+        return Err(EditorError::InvalidIntent {
+            message: format!("block {id} is not a list item"),
+        });
+    }
+    let list_id = document
+        .parent(id)
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "list item has no parent list".to_owned(),
+        })?;
+    let Some(BlockKind::List {
+        ordered,
+        start,
+        tight,
+        items,
+    }) = document.kind(list_id).cloned()
+    else {
+        return Err(EditorError::InvalidIntent {
+            message: "list item parent is not a list".to_owned(),
+        });
+    };
+    let index =
+        items
+            .iter()
+            .position(|item| *item == id)
+            .ok_or_else(|| EditorError::InvalidIntent {
+                message: "list item is not linked from its list".to_owned(),
+            })?;
+    if index == 0 {
+        return Ok(());
+    }
+    let previous = items[index - 1];
+    let previous_children = document
+        .children(previous)
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "previous list item has no children".to_owned(),
+        })?
+        .to_vec();
+    let target_list = if let Some(last) = previous_children.last() {
+        if matches!(document.kind(*last), Some(BlockKind::List { .. })) {
+            *last
+        } else {
+            document.insert_block(
+                Some(previous),
+                previous_children.len(),
+                BlockKind::List {
+                    ordered,
+                    start,
+                    tight,
+                    items: vec![],
+                },
+            )?
+        }
+    } else {
+        document.insert_block(
+            Some(previous),
+            0,
+            BlockKind::List {
+                ordered,
+                start,
+                tight,
+                items: vec![],
+            },
+        )?
+    };
+    let target_index = document
+        .children(target_list)
+        .map_or(0, |children| children.len());
+    document.move_block(id, Some(target_list), target_index)?;
+    Ok(())
+}
+
+fn outdent_list_item(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    let snapshot = document.snapshot();
+    let result = outdent_list_item_inner(document, id);
+    if result.is_err() {
+        document.restore(snapshot);
+    }
+    result
+}
+
+fn outdent_list_item_inner(document: &mut Document, id: BlockId) -> EditorResult<()> {
+    if !matches!(document.kind(id), Some(BlockKind::ListItem { .. })) {
+        return Err(EditorError::InvalidIntent {
+            message: format!("block {id} is not a list item"),
+        });
+    }
+    let list_id = document
+        .parent(id)
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "list item has no parent list".to_owned(),
+        })?;
+    let list_parent = document
+        .parent(list_id)
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "root-level list cannot be outdented".to_owned(),
+        })?;
+    if !matches!(document.kind(list_parent), Some(BlockKind::ListItem { .. })) {
+        return Err(EditorError::InvalidIntent {
+            message: "nested list parent is not a list item".to_owned(),
+        });
+    }
+    let grand_list = document
+        .parent(list_parent)
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "list item parent has no parent list".to_owned(),
+        })?;
+    if !matches!(document.kind(grand_list), Some(BlockKind::List { .. })) {
+        return Err(EditorError::InvalidIntent {
+            message: "list item parent is not inside a list".to_owned(),
+        });
+    }
+    let grand_index = document
+        .children(grand_list)
+        .and_then(|children| children.iter().position(|child| *child == list_parent))
+        .ok_or_else(|| EditorError::InvalidIntent {
+            message: "parent list item is not linked".to_owned(),
+        })?;
+    document.move_block_allow_empty(id, Some(grand_list), grand_index + 1)?;
+
+    if document
+        .children(list_id)
+        .is_some_and(|children| children.is_empty())
+    {
+        document.remove_block(list_id)?;
+    }
+    Ok(())
 }
 
 fn apply_replace_text(
@@ -494,5 +657,135 @@ mod tests {
         assert!(document.node(right).is_none());
         applied.inverse.apply(&mut document).unwrap();
         assert_eq!(document.kind(left).unwrap().leaf_len(), Some(1));
+    }
+
+    #[test]
+    fn indent_list_item_creates_nested_list() {
+        let mut document = Document::new();
+        let list = document
+            .insert_block(
+                None,
+                0,
+                BlockKind::List {
+                    ordered: false,
+                    start: 1,
+                    tight: true,
+                    items: vec![],
+                },
+            )
+            .unwrap();
+        let first = document
+            .append_block(
+                Some(list),
+                BlockKind::ListItem {
+                    task: None,
+                    children: vec![],
+                },
+            )
+            .unwrap();
+        document.append_block(Some(first), paragraph("a")).unwrap();
+        let second = document
+            .append_block(
+                Some(list),
+                BlockKind::ListItem {
+                    task: None,
+                    children: vec![],
+                },
+            )
+            .unwrap();
+        document.append_block(Some(second), paragraph("b")).unwrap();
+
+        let applied = Operation::IndentListItem { id: second }
+            .apply(&mut document)
+            .unwrap();
+        assert!(document.validate().is_ok());
+        assert!(
+            document
+                .children(first)
+                .unwrap()
+                .iter()
+                .any(|child| matches!(document.kind(*child), Some(BlockKind::List { .. })))
+        );
+        applied.inverse.apply(&mut document).unwrap();
+        assert!(document.validate().is_ok());
+        assert_eq!(document.children(list).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn indent_first_item_is_noop() {
+        let mut document = Document::new();
+        let list = document
+            .insert_block(
+                None,
+                0,
+                BlockKind::List {
+                    ordered: false,
+                    start: 1,
+                    tight: true,
+                    items: vec![],
+                },
+            )
+            .unwrap();
+        let first = document
+            .append_block(
+                Some(list),
+                BlockKind::ListItem {
+                    task: None,
+                    children: vec![],
+                },
+            )
+            .unwrap();
+        document.append_block(Some(first), paragraph("a")).unwrap();
+        assert!(
+            Operation::IndentListItem { id: first }
+                .apply(&mut document)
+                .is_ok()
+        );
+        assert_eq!(document.children(list).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn outdent_nested_item_removes_empty_list() {
+        let mut document = Document::new();
+        let list = document
+            .insert_block(
+                None,
+                0,
+                BlockKind::List {
+                    ordered: false,
+                    start: 1,
+                    tight: true,
+                    items: vec![],
+                },
+            )
+            .unwrap();
+        let first = document
+            .append_block(
+                Some(list),
+                BlockKind::ListItem {
+                    task: None,
+                    children: vec![],
+                },
+            )
+            .unwrap();
+        document.append_block(Some(first), paragraph("a")).unwrap();
+        let second = document
+            .append_block(
+                Some(list),
+                BlockKind::ListItem {
+                    task: None,
+                    children: vec![],
+                },
+            )
+            .unwrap();
+        document.append_block(Some(second), paragraph("b")).unwrap();
+        Operation::IndentListItem { id: second }
+            .apply(&mut document)
+            .unwrap();
+        Operation::OutdentListItem { id: second }
+            .apply(&mut document)
+            .unwrap();
+        assert!(document.validate().is_ok());
+        assert_eq!(document.children(list).unwrap().len(), 2);
     }
 }

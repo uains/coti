@@ -517,6 +517,33 @@ impl Document {
         new_parent: Option<BlockId>,
         index: usize,
     ) -> DocumentResult<()> {
+        self.move_block_inner(id, new_parent, index, false)
+    }
+
+    /// Moves a block and allows the old container to become empty.
+    ///
+    /// This is intended for structural Cleanup paths that remove the emptied
+    /// container immediately afterwards.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::move_block`].
+    pub fn move_block_allow_empty(
+        &mut self,
+        id: BlockId,
+        new_parent: Option<BlockId>,
+        index: usize,
+    ) -> DocumentResult<()> {
+        self.move_block_inner(id, new_parent, index, true)
+    }
+
+    fn move_block_inner(
+        &mut self,
+        id: BlockId,
+        new_parent: Option<BlockId>,
+        index: usize,
+        allow_empty: bool,
+    ) -> DocumentResult<()> {
         let node = self.arena.get(id).ok_or_else(|| stale(id))?;
         let old_parent = node.parent();
         let child_kind = node.kind();
@@ -557,7 +584,7 @@ impl Document {
         let old_len = self.child_count(old_parent)?;
         let new_len = self.child_count(new_parent)?;
 
-        if old_parent != new_parent && old_len == 1 {
+        if old_parent != new_parent && old_len == 1 && !allow_empty {
             return Err(DocumentError::Invariant {
                 message: format!("moving block {id} would empty its current parent"),
             });
