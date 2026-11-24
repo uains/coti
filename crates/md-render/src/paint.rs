@@ -290,9 +290,9 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                         PaintLayer::Decorations,
                         PaintCommand::Text {
                             rect: Rect::new(
-                                item.rect.left() - 18.0,
+                                item.rect.left() - 12.0,
                                 item.rect.top(),
-                                18.0,
+                                12.0,
                                 theme.line_height,
                             ),
                             text: format!("{}.", index + 1),
@@ -307,9 +307,9 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                         PaintLayer::Decorations,
                         PaintCommand::Text {
                             rect: Rect::new(
-                                item.rect.left() - 10.0,
+                                item.rect.left() - 6.0,
                                 item.rect.top(),
-                                10.0,
+                                6.0,
                                 theme.line_height,
                             ),
                             text: "•".to_owned(),

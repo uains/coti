@@ -569,7 +569,7 @@ impl CotiView {
             ScrollDelta::Lines(delta) => delta.y * self.window.view.theme.line_height,
         };
         let height = self.window.view.layout.total_height();
-        self.window.view.scroll.scroll_by(delta, height);
+        self.window.view.scroll.scroll_by(-delta, height);
         cx.notify();
     }
 
