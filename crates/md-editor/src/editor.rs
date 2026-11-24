@@ -1066,6 +1066,53 @@ impl Editor {
             })?;
 
         if parent != end_parent {
+            if let (Some(start_item), Some(end_item)) = (
+                self.document.parent(start.block_id),
+                self.document.parent(end.block_id),
+            ) && let Some(start_list) = self.document.parent(start_item)
+                && self.document.parent(end_item) == Some(start_list)
+                && matches!(
+                    self.document.kind(start_item),
+                    Some(BlockKind::ListItem { .. })
+                )
+                && matches!(
+                    self.document.kind(end_item),
+                    Some(BlockKind::ListItem { .. })
+                )
+                && let Some(items) = self.document.children(start_list)
+                && let Some(start_index) = items.iter().position(|id| *id == start_item)
+                && let Some(end_index) = items.iter().position(|id| *id == end_item)
+                && start_index < end_index
+                && let Some(start_content) = self
+                    .document
+                    .kind(start.block_id)
+                    .and_then(BlockKind::inline_content)
+                && let Some(end_content) = self
+                    .document
+                    .kind(end.block_id)
+                    .and_then(BlockKind::inline_content)
+                && let Some((prefix, _)) = start_content.split_at(start.offset)
+                && let Some((_, suffix)) = end_content.split_at(end.offset)
+            {
+                let mut merged = prefix;
+                merged.append_content(&suffix);
+                merged.normalize();
+                let mut transaction = Transaction::new(self.document_revision());
+                transaction.push(Operation::SetInlineContent {
+                    block_id: start.block_id,
+                    content: merged,
+                });
+                for item in &items[start_index + 1..=end_index] {
+                    transaction.push(Operation::RemoveListItem { id: *item });
+                }
+                self.commit(transaction)?;
+                self.selection =
+                    SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
+                self.pending_marks = None;
+                self.state_revision += 1;
+                return Ok(());
+            }
+
             let mut transaction = Transaction::new(self.document_revision());
             transaction.push(Operation::ReplaceText {
                 block_id: start.block_id,
@@ -2692,8 +2739,7 @@ mod tests {
         let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
         editor.dispatch(Intent::DeleteBackward).unwrap();
         let output = md_markdown::serialize_document(editor.document(), source);
-        assert!(output.contains("- a"), "unexpected output: {output:?}");
-        assert!(output.contains("- f"), "unexpected output: {output:?}");
+        assert!(output.trim_end() == "- af", "unexpected output: {output:?}");
         assert!(editor.document().validate().is_ok());
     }
 

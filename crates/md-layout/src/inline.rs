@@ -134,13 +134,17 @@ pub fn layout_inline(
 ) -> InlineLayout {
     let max_width = width.max(1.0);
     let metrics = measurer.line_metrics(style);
-    let mut clusters = Vec::new();
+    let mut clusters: Vec<Cluster> = Vec::new();
     let mut base = 0;
     for run in content.runs() {
         match run {
             Run::Text { text, marks } => {
+                let is_code = marks.flags.contains(MarkFlags::CODE);
+                if is_code && let Some(previous) = clusters.last_mut() {
+                    previous.advance += 2.0;
+                }
                 let mut run_style = *style;
-                if marks.flags.contains(MarkFlags::CODE) {
+                if is_code {
                     run_style.mono = true;
                 }
                 if marks.flags.contains(MarkFlags::STRONG) {
@@ -160,6 +164,9 @@ pub fn layout_inline(
                         hard_break: false,
                         marks: marks.clone(),
                     });
+                }
+                if is_code && let Some(last) = clusters.last_mut() {
+                    last.advance += 2.0;
                 }
                 base = clusters.last().map_or(base, |cluster| cluster.end);
             }
