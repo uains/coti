@@ -2,7 +2,7 @@
 
 use md_core::Size;
 use md_document::{DocPos, Document, SelectionSet};
-use md_layout::{LayoutEngine, LayoutEnv, LayoutTree, ResolvedStyle};
+use md_layout::{LayoutEnv, LayoutTree, ResolvedStyle};
 
 use crate::input::{CaretBlink, InputAdapter, ScrollState};
 use crate::paint::build_paint_plan;
@@ -40,10 +40,10 @@ impl RenderView {
         }
     }
 
-    /// Rebuilds layout for a document and viewport.
+    /// Creates a view with an empty layout, to be filled by a real measurer.
     #[must_use]
-    pub fn sync(document: &Document, viewport: Size, style: ResolvedStyle, theme: Theme) -> Self {
-        let layout = LayoutTree::full(document, LayoutEnv::new(viewport, style));
+    pub fn empty(viewport: Size, style: ResolvedStyle, theme: Theme) -> Self {
+        let layout = LayoutTree::empty(LayoutEnv::new(viewport, style));
         Self::new(layout, theme)
     }
 
@@ -56,19 +56,6 @@ impl RenderView {
         caret: Option<DocPos>,
     ) -> PaintPlan {
         build_paint_plan(&self.layout, document, selection, caret, &self.theme)
-    }
-
-    /// Re-syncs layout with an incremental engine.
-    pub fn sync_incremental(
-        &mut self,
-        engine: &mut LayoutEngine,
-        document: &Document,
-        viewport: Size,
-        style: ResolvedStyle,
-    ) {
-        self.layout = engine.sync(document, LayoutEnv::new(viewport, style));
-        self.scroll.viewport_height = viewport.height;
-        self.scroll.clamp(self.layout.total_height());
     }
 }
 

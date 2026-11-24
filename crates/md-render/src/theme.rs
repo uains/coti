@@ -118,6 +118,8 @@ pub enum PaintCommand {
         font_size: f32,
         /// Font weight.
         font_weight: f32,
+        /// Whether this line uses a monospace family.
+        mono: bool,
     },
     /// Draw an image.
     Image {

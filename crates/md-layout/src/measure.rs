@@ -35,6 +35,14 @@ pub trait TextMeasurer {
     /// Measures one grapheme cluster or text chunk.
     fn advance(&self, text: &str, style: &MeasureStyle) -> f32;
 
+    /// Measures the grapheme clusters of one text run.
+    fn cluster_advances(&self, text: &str, style: &MeasureStyle) -> Vec<f32> {
+        use unicode_segmentation::UnicodeSegmentation;
+        text.graphemes(true)
+            .map(|grapheme| self.advance(grapheme, style))
+            .collect()
+    }
+
     /// Measures one inline atom.
     fn atom_advance(&self, kind: &AtomKind, style: &MeasureStyle) -> f32;
 

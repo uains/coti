@@ -41,6 +41,8 @@ pub struct Line {
     pub font_size: f32,
     /// Font weight used for this line.
     pub font_weight: f32,
+    /// Whether this line uses a monospace family.
+    pub mono: bool,
 }
 
 impl Line {
@@ -135,13 +137,16 @@ pub fn layout_inline(
     for run in content.runs() {
         match run {
             Run::Text { text, .. } => {
-                for (byte, grapheme) in text.as_str().grapheme_indices(true) {
+                let advances = measurer.cluster_advances(text.as_str(), style);
+                for ((byte, grapheme), advance) in
+                    text.as_str().grapheme_indices(true).zip(advances)
+                {
                     let start = base + byte;
                     clusters.push(Cluster {
                         text: grapheme.to_owned(),
                         start,
                         end: start + grapheme.len(),
-                        advance: measurer.advance(grapheme, style),
+                        advance,
                         atom: None,
                         hard_break: false,
                     });
@@ -182,6 +187,7 @@ pub fn layout_inline(
                 &metrics,
                 style.font_size,
                 style.weight,
+                style.mono,
             ));
             current_width = 0.0;
             continue;
@@ -200,6 +206,7 @@ pub fn layout_inline(
                     &metrics,
                     style.font_size,
                     style.weight,
+                    style.mono,
                 ));
                 current = remainder;
             } else {
@@ -210,6 +217,7 @@ pub fn layout_inline(
                     &metrics,
                     style.font_size,
                     style.weight,
+                    style.mono,
                 ));
                 current_width = 0.0;
             }
@@ -225,6 +233,7 @@ pub fn layout_inline(
             &metrics,
             style.font_size,
             style.weight,
+            style.mono,
         ));
     }
 
@@ -239,6 +248,7 @@ fn make_line(
     metrics: &crate::measure::LineMetrics,
     font_size: f32,
     font_weight: f32,
+    mono: bool,
 ) -> Line {
     let start = clusters.first().map_or(0, |cluster| cluster.start);
     let end = clusters.last().map_or(start, |cluster| cluster.end);
@@ -252,6 +262,7 @@ fn make_line(
         baseline: top + metrics.ascent,
         font_size,
         font_weight,
+        mono,
     }
 }
 

@@ -98,11 +98,32 @@ fn window_builds_paint_plan_for_document() {
     let path = temp_path("window");
     std::fs::write(&path, "window body\n").unwrap();
     let state = AppState::open(&path).unwrap();
-    let view = AppWindow::new(state, Size::new(600.0, 400.0));
+    let mut view = AppWindow::new(state, Size::new(600.0, 400.0));
+    view.relayout_with(&mut TestMeasurer);
     let selection = view.state.editor().selection().clone();
     let plan = view
         .view
         .paint(view.state.editor().document(), &selection, None);
     assert!(!plan.items.is_empty());
     let _ = std::fs::remove_file(path);
+}
+
+struct TestMeasurer;
+
+impl md_layout::TextMeasurer for TestMeasurer {
+    fn advance(&self, text: &str, style: &md_layout::MeasureStyle) -> f32 {
+        text.chars().count() as f32 * style.font_size * 0.6
+    }
+
+    fn atom_advance(&self, _kind: &md_document::AtomKind, style: &md_layout::MeasureStyle) -> f32 {
+        style.font_size
+    }
+
+    fn line_metrics(&self, style: &md_layout::MeasureStyle) -> md_layout::LineMetrics {
+        md_layout::LineMetrics::new(
+            style.line_height * 0.8,
+            style.line_height * 0.2,
+            style.line_height,
+        )
+    }
 }

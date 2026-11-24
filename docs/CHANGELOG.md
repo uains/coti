@@ -1210,3 +1210,13 @@
 - 墨/纸/高对比三主题补齐语义色；Ctrl+Shift+T 循环主题。
 - 修复代码块换行：按行构造成 HardBreak，避免 GPUI `layout_line` 收到换行符崩溃。
 - 291 个测试通过；实际窗口截图验证标题/引用/列表/代码块主题。
+
+## 2026-11-24 · 完全移除运行时 FakeMeasurer 路径
+
+- `AppWindow` 初始使用空布局，不再先用 FakeMeasurer 布局。
+- 首次 GPUI 渲染即注入 `SysMeasurer`，之后按 document revision/width 重排。
+- `TextMeasurer` 增加 `cluster_advances`：整段 shaping 后按 grapheme 边界取 advance，避免逐字测量误差。
+- CodeBlock 使用 mono font（Consolas）；`Line` 携带 `mono`/`font_weight`。
+- 删除 `RenderView::sync` 与 `sync_incremental` 的 Fake 默认布局入口；生产 app 只走真实 measurer。
+- `FakeMeasurer` 仅保留在 md-layout 单元测试/无窗口测试中（与参考工程一致）。
+- 291 个测试通过；实际窗口截图验证换行、字重、代码字体、主题。

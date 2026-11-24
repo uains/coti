@@ -12,6 +12,7 @@ use md_core::Size;
 use md_layout::{LineMetrics, MeasureStyle, TextMeasurer};
 use md_render::{Color, PaintCommand};
 use std::panic;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{AppState, AppWindow};
 use crate::config::AppConfig;
@@ -335,8 +336,13 @@ impl Element for DocumentElement {
                     color,
                     font_size,
                     font_weight,
+                    mono,
                 } => {
-                    let mut font = text_style.font();
+                    let mut font = if mono {
+                        gpui::font("Consolas")
+                    } else {
+                        text_style.font()
+                    };
                     font.weight = FontWeight(font_weight);
                     let run = TextRun {
                         len: text.len(),
@@ -418,12 +424,20 @@ struct SysMeasurer<'a> {
 }
 
 impl SysMeasurer<'_> {
-    fn run(&self, len: usize, weight: f32) -> TextRun {
-        let mut font = self.font.clone();
-        font.weight = FontWeight(weight);
+    fn font_for(&self, style: &MeasureStyle) -> gpui::Font {
+        let mut font = if style.mono {
+            gpui::font("Consolas")
+        } else {
+            self.font.clone()
+        };
+        font.weight = FontWeight(style.weight);
+        font
+    }
+
+    fn run(&self, len: usize, style: &MeasureStyle) -> TextRun {
         TextRun {
             len,
-            font,
+            font: self.font_for(style),
             color: gpui::black(),
             background_color: None,
             underline: None,
@@ -440,16 +454,43 @@ impl TextMeasurer for SysMeasurer<'_> {
         if text.contains(['\n', '\r']) {
             return self
                 .sys
-                .layout_line(" ", px(style.font_size), &[self.run(1, style.weight)], None)
+                .layout_line(" ", px(style.font_size), &[self.run(1, style)], None)
                 .width
                 .into();
         }
-        let run = self.run(text.len(), style.weight);
+        let run = self.run(text.len(), style);
         f32::from(
             self.sys
                 .layout_line(text, px(style.font_size), &[run], None)
                 .width,
         )
+    }
+
+    fn cluster_advances(&self, text: &str, style: &MeasureStyle) -> Vec<f32> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+        if text.contains(['\n', '\r']) {
+            return text
+                .graphemes(true)
+                .map(|grapheme| self.advance(grapheme, style))
+                .collect();
+        }
+        let run = self.run(text.len(), style);
+        let layout = self
+            .sys
+            .layout_line(text, px(style.font_size), &[run], None);
+        let mut boundaries: Vec<usize> =
+            text.grapheme_indices(true).map(|(byte, _)| byte).collect();
+        boundaries.push(text.len());
+        boundaries
+            .windows(2)
+            .map(|pair| {
+                let start = f32::from(layout.x_for_index(pair[0]));
+                let end = f32::from(layout.x_for_index(pair[1]));
+                (end - start).max(0.0)
+            })
+            .collect()
     }
 
     fn atom_advance(&self, kind: &md_document::AtomKind, style: &MeasureStyle) -> f32 {
@@ -462,8 +503,9 @@ impl TextMeasurer for SysMeasurer<'_> {
     }
 
     fn line_metrics(&self, style: &MeasureStyle) -> LineMetrics {
-        let run = self.run(1, style.weight);
-        let layout = self.sys.layout_line("x", px(style.font_size), &[run], None);
+        let layout = self
+            .sys
+            .layout_line("x", px(style.font_size), &[self.run(1, style)], None);
         LineMetrics::new(
             f32::from(layout.ascent),
             f32::from(layout.descent),

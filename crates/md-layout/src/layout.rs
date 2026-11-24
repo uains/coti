@@ -88,6 +88,17 @@ pub struct LayoutTree {
 }
 
 impl LayoutTree {
+    /// Creates an empty layout tree for the given environment.
+    #[must_use]
+    pub fn empty(env: LayoutEnv) -> Self {
+        Self {
+            blocks: Vec::new(),
+            index: DocumentIndex::default(),
+            env,
+            height: 0.0,
+        }
+    }
+
     /// Lays out a document from scratch.
     #[must_use]
     pub fn full(document: &Document, env: LayoutEnv) -> Self {
@@ -526,7 +537,8 @@ impl<'a> LayoutEngine<'a> {
         width: f32,
         env: LayoutEnv,
     ) -> BlockLayout {
-        let style = MeasureStyle::new(env.style.code_font_size, env.style.code_font_size * 1.5);
+        let mut style = MeasureStyle::new(env.style.code_font_size, env.style.code_font_size * 1.5);
+        style.mono = true;
         let padding = env.style.code_padding;
         let mut content = md_document::InlineContent::new();
         for (index, line) in text.split('\n').enumerate() {

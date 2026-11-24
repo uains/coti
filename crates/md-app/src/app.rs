@@ -328,7 +328,7 @@ impl AppWindow {
             line_height: state.config().line_height,
             ..ResolvedStyle::default()
         };
-        RenderView::sync(state.editor().document(), viewport, style, theme)
+        RenderView::empty(viewport, style, theme)
     }
 
     /// Scrolls so the caret is visible, or centers it in typewriter mode.

@@ -64,6 +64,8 @@ pub struct MeasureStyle {
     pub letter_spacing: f32,
     /// Font weight.
     pub weight: f32,
+    /// Whether this run uses a monospace family.
+    pub mono: bool,
 }
 
 impl MeasureStyle {
@@ -75,6 +77,7 @@ impl MeasureStyle {
             line_height,
             letter_spacing: 0.0,
             weight: 400.0,
+            mono: false,
         }
     }
 }

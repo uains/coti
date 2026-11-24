@@ -113,6 +113,7 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
                 color,
                 font_size: line.font_size,
                 font_weight: line.font_weight,
+                mono: line.mono,
             },
         );
     }
@@ -233,6 +234,7 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                             color: theme.accent,
                             font_size: theme.font_size,
                             font_weight: 400.0,
+                            mono: false,
                         },
                     );
                 } else {

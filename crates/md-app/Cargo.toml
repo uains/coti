@@ -16,6 +16,7 @@ md-render.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 rfd.workspace = true
+unicode-segmentation.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
