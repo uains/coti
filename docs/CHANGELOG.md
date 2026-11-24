@@ -565,3 +565,41 @@
 ### 下一步
 
 - 3.2：`DocPos`、`Affinity`、`Position`、`BlockGapPosition`、Separator 两端解析与双向转换。
+
+## 2026-11-24 · 阶段 3 / 步骤 3.2：DocPos、Affinity 与 Position 转换
+
+**状态：** 已完成。
+
+### 变更
+
+- 新增 `DocPos`：独立 newtype，提供 `ZERO`、`new`、`get`、`checked_add`、`checked_sub`、`Display` 与 `usize` 转换。
+- 新增 `Affinity`：`Upstream` / `Downstream`，默认 `Upstream`。
+- 新增 `Position { block_id, offset, affinity }`。
+- 新增 `BlockGapPosition { parent: Option<BlockId>, child_index, affinity }`，用 `None` 表示根级间隙。
+- `DocumentIndex` 新增：
+  - `resolve_position(document, DocPos, Affinity)`。
+  - `to_doc_pos(document, Position)`。
+  - `is_valid_doc_pos`。
+- Separator 解析规则：
+  - `Upstream` 优先前叶末尾。
+  - `Downstream` 优先后叶开头。
+  - 空叶子在 `Downstream` 下保持可定位。
+- `PositionError` 新增 `OffsetOutOfBounds`；非法 UTF-8/Atom 中间 offset 返回 `IllegalBoundary`。
+- 新增 7 个位置测试：Separator 两端、空叶子、全长度至少一种 Affinity 往返、错误分类、CJK 码点内部拒绝。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：119 个测试通过（`md-document` 63 个单元测试 + 3 个属性测试）。
+
+### 设计说明
+
+- `DocPos` 是 UTF-8 字节与逻辑单位的混合坐标；`resolve_position` 会拒绝落在 UTF-8 码点或 Atom 内部的线性位置，不静默吸附。
+- Separator 两端是歧义位置：不对“任意 Affinity 都往返”作承诺，只要求每个合法 `DocPos` 至少有一种 Affinity 可无损表示。
+- 容器不贡献长度；`BlockGapPosition` 不强行映射到唯一 `DocPos`，留给结构操作与 Editor policy。
+- `to_doc_pos` 通过叶子局部合法 offset 判定，防止调用方绕过 UTF-8/Atom 边界。
+
+### 下一步
+
+- 3.3：`Anchor`、`Selection`、`SelectionSet`、Node/TableCells 选择与多选区校验。

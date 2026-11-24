@@ -3,7 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{BlockId, Document, DocumentError, DocumentResult};
+use crate::{
+    Affinity, BlockId, DocPos, Document, DocumentError, DocumentResult, Position, PositionError,
+    PositionResult,
+};
 
 /// Location metadata for one block.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -162,6 +165,137 @@ impl DocumentIndex {
         })
     }
 
+    /// Resolves a linear position to a structured leaf position.
+    ///
+    /// Separator endpoints are resolved according to `affinity`: `Upstream`
+    /// prefers the preceding leaf's end, `Downstream` prefers the following
+    /// leaf's start. Empty leaves remain addressable with `Downstream`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `pos` is beyond the document or the index points at
+    /// a non-leaf or stale block.
+    pub fn resolve_position(
+        &self,
+        document: &Document,
+        pos: DocPos,
+        affinity: Affinity,
+    ) -> PositionResult<Position> {
+        let linear = pos.get();
+        if linear > self.doc_length {
+            return Err(PositionError::DocPosOutOfBounds {
+                pos: linear,
+                len: self.doc_length,
+            });
+        }
+
+        let hit = self
+            .leaf_at(linear)
+            .ok_or(PositionError::DocPosOutOfBounds {
+                pos: linear,
+                len: self.doc_length,
+            })?;
+        let leaf_len = self
+            .leaf_len(hit.leaf_index)
+            .ok_or(PositionError::IllegalBoundary)?;
+        let kind = document
+            .kind(hit.block_id)
+            .ok_or_else(|| stale_position(hit.block_id))?;
+        let expected_len = kind.leaf_len().ok_or_else(|| PositionError::NotALeaf {
+            index: hit.block_id.index(),
+            generation: hit.block_id.generation(),
+        })?;
+        if expected_len != leaf_len || !kind.is_valid_leaf_offset(hit.offset) {
+            return Err(PositionError::IllegalBoundary);
+        }
+
+        if affinity == Affinity::Upstream && hit.offset == 0 && hit.leaf_index > 0 {
+            let previous_index = hit.leaf_index - 1;
+            let block_id = *self
+                .leaf_order
+                .get(previous_index)
+                .ok_or(PositionError::IllegalBoundary)?;
+            document
+                .kind(block_id)
+                .ok_or_else(|| stale_position(block_id))?;
+            return Ok(Position {
+                block_id,
+                offset: self.leaf_len(previous_index).unwrap_or(0),
+                affinity,
+            });
+        }
+
+        if affinity == Affinity::Downstream
+            && leaf_len > 0
+            && hit.offset == leaf_len
+            && hit.leaf_index + 1 < self.leaf_count()
+        {
+            let next_index = hit.leaf_index + 1;
+            let block_id = *self
+                .leaf_order
+                .get(next_index)
+                .ok_or(PositionError::IllegalBoundary)?;
+            document
+                .kind(block_id)
+                .ok_or_else(|| stale_position(block_id))?;
+            return Ok(Position {
+                block_id,
+                offset: 0,
+                affinity,
+            });
+        }
+
+        Ok(Position {
+            block_id: hit.block_id,
+            offset: hit.offset,
+            affinity,
+        })
+    }
+
+    /// Converts a structured leaf position into a linear document position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a stale block, a non-leaf block, an out-of-bounds
+    /// offset, or an offset inside a UTF-8 code point / atom.
+    pub fn to_doc_pos(&self, document: &Document, position: Position) -> PositionResult<DocPos> {
+        let location = self
+            .block_location(position.block_id)
+            .ok_or_else(|| stale_position(position.block_id))?;
+        let leaf_index = location.leaf_index.ok_or_else(|| PositionError::NotALeaf {
+            index: position.block_id.index(),
+            generation: position.block_id.generation(),
+        })?;
+        let kind = document
+            .kind(position.block_id)
+            .ok_or_else(|| stale_position(position.block_id))?;
+        let leaf_len = kind.leaf_len().ok_or_else(|| PositionError::NotALeaf {
+            index: position.block_id.index(),
+            generation: position.block_id.generation(),
+        })?;
+
+        if position.offset > leaf_len {
+            return Err(PositionError::OffsetOutOfBounds {
+                offset: position.offset,
+                len: leaf_len,
+            });
+        }
+        if !kind.is_valid_leaf_offset(position.offset) {
+            return Err(PositionError::IllegalBoundary);
+        }
+
+        let start = self
+            .leaf_start(leaf_index)
+            .ok_or(PositionError::IllegalBoundary)?;
+        Ok(DocPos::new(start + position.offset))
+    }
+
+    /// Returns `true` when `pos` is within the indexed document length.
+    #[must_use]
+    pub fn is_valid_doc_pos(&self, pos: DocPos) -> bool {
+        pos.get() <= self.doc_length
+    }
+
     /// Validates that this index matches a fresh rebuild of `document`.
     ///
     /// # Errors
@@ -175,6 +309,13 @@ impl DocumentIndex {
             });
         }
         Ok(())
+    }
+}
+
+fn stale_position(id: BlockId) -> PositionError {
+    PositionError::StaleBlockId {
+        index: id.index(),
+        generation: id.generation(),
     }
 }
 
@@ -245,7 +386,6 @@ impl IndexBuilder<'_> {
 struct FenwickTree {
     tree: Vec<usize>,
 }
-
 impl FenwickTree {
     fn from_values(values: &[usize]) -> Self {
         let mut tree = vec![0; values.len() + 1];
@@ -301,7 +441,9 @@ impl FenwickTree {
 #[cfg(test)]
 mod tests {
     use super::FenwickTree;
-    use crate::{BlockKind, Document, InlineContent};
+    use crate::{
+        Affinity, BlockId, BlockKind, DocPos, Document, InlineContent, Position, PositionError,
+    };
 
     fn paragraph(text: &str) -> BlockKind {
         BlockKind::Paragraph(InlineContent::from_text(text))
@@ -401,5 +543,186 @@ mod tests {
         assert_eq!(tree.lower_bound(5), Some(2));
         assert_eq!(tree.lower_bound(11), Some(2));
         assert_eq!(tree.lower_bound(12), None);
+    }
+
+    #[test]
+    fn separator_positions_resolve_by_affinity() {
+        let mut document = Document::new();
+        let empty = document.root_children()[0];
+        let hi = document.append_block(None, paragraph("Hi")).unwrap();
+        let world = document.append_block(None, paragraph("世界")).unwrap();
+        let index = document.index();
+
+        let resolve = |pos, affinity| {
+            index
+                .resolve_position(&document, DocPos::new(pos), affinity)
+                .unwrap()
+        };
+
+        assert_eq!(
+            resolve(0, Affinity::Upstream),
+            Position {
+                block_id: empty,
+                offset: 0,
+                affinity: Affinity::Upstream
+            }
+        );
+        assert_eq!(
+            resolve(1, Affinity::Upstream).block_id,
+            empty,
+            "separator end upstream goes to preceding leaf"
+        );
+        assert_eq!(resolve(1, Affinity::Upstream).offset, 0);
+        assert_eq!(resolve(1, Affinity::Downstream).block_id, hi);
+        assert_eq!(resolve(1, Affinity::Downstream).offset, 0);
+
+        assert_eq!(resolve(3, Affinity::Upstream).block_id, hi);
+        assert_eq!(resolve(3, Affinity::Upstream).offset, 2);
+        assert_eq!(resolve(3, Affinity::Downstream).block_id, world);
+        assert_eq!(resolve(3, Affinity::Downstream).offset, 0);
+
+        assert_eq!(resolve(4, Affinity::Upstream).block_id, hi);
+        assert_eq!(resolve(4, Affinity::Upstream).offset, 2);
+        assert_eq!(resolve(4, Affinity::Downstream).block_id, world);
+        assert_eq!(resolve(4, Affinity::Downstream).offset, 0);
+
+        assert_eq!(resolve(10, Affinity::Upstream).offset, 6);
+        assert_eq!(resolve(10, Affinity::Downstream).offset, 6);
+    }
+
+    #[test]
+    fn every_doc_pos_roundtrips_with_at_least_one_affinity() {
+        let mut document = Document::new();
+        document.append_block(None, paragraph("Hi")).unwrap();
+        document.append_block(None, paragraph("世界")).unwrap();
+        let index = document.index();
+
+        for pos in 0..=index.doc_length() {
+            let hit = index.leaf_at(pos).unwrap();
+            let kind = document.kind(hit.block_id).unwrap();
+            if !kind.is_valid_leaf_offset(hit.offset) {
+                continue;
+            }
+
+            let upstream = index
+                .resolve_position(&document, DocPos::new(pos), Affinity::Upstream)
+                .unwrap();
+            let downstream = index
+                .resolve_position(&document, DocPos::new(pos), Affinity::Downstream)
+                .unwrap();
+
+            let upstream_back = index.to_doc_pos(&document, upstream).unwrap();
+            let downstream_back = index.to_doc_pos(&document, downstream).unwrap();
+
+            assert!(
+                upstream_back == DocPos::new(pos) || downstream_back == DocPos::new(pos),
+                "pos {pos} did not roundtrip: {upstream:?} / {downstream:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_leaf_is_addressable_with_downstream() {
+        let mut document = Document::new();
+        let first_empty = document.root_children()[0];
+        document.append_block(None, paragraph("Hi")).unwrap();
+        let middle_empty = document.insert_block(None, 2, paragraph("")).unwrap();
+        let tail = document.append_block(None, paragraph("B")).unwrap();
+        let index = document.index();
+
+        assert_ne!(first_empty, middle_empty);
+        let empty_start = index.block_location(middle_empty).unwrap().doc_start;
+        let downstream = index
+            .resolve_position(&document, DocPos::new(empty_start), Affinity::Downstream)
+            .unwrap();
+        assert_eq!(downstream.block_id, middle_empty);
+        assert_eq!(downstream.offset, 0);
+
+        let upstream = index
+            .resolve_position(&document, DocPos::new(empty_start), Affinity::Upstream)
+            .unwrap();
+        assert_eq!(upstream.offset, 2, "upstream lands at previous leaf end");
+        assert_eq!(
+            index.to_doc_pos(&document, downstream).unwrap(),
+            DocPos::new(empty_start)
+        );
+        assert_eq!(index.leaf_at(index.doc_length()).unwrap().block_id, tail);
+    }
+
+    #[test]
+    fn position_errors_are_specific() {
+        let mut document = Document::new();
+        let paragraph_id = document.root_children()[0];
+        let quote = document
+            .insert_block(None, 0, BlockKind::Quote(vec![]))
+            .unwrap();
+        let index = document.index();
+
+        assert!(matches!(
+            index.resolve_position(&document, DocPos::new(1), Affinity::Upstream),
+            Err(PositionError::DocPosOutOfBounds { .. })
+        ));
+
+        assert!(matches!(
+            index.to_doc_pos(
+                &document,
+                Position {
+                    block_id: paragraph_id,
+                    offset: 1,
+                    affinity: Affinity::Upstream
+                }
+            ),
+            Err(PositionError::OffsetOutOfBounds { .. })
+        ));
+
+        assert!(matches!(
+            index.to_doc_pos(
+                &document,
+                Position {
+                    block_id: BlockId::new(99, 1),
+                    offset: 0,
+                    affinity: Affinity::Upstream
+                }
+            ),
+            Err(PositionError::StaleBlockId { .. })
+        ));
+
+        assert!(matches!(
+            index.to_doc_pos(
+                &document,
+                Position {
+                    block_id: quote,
+                    offset: 0,
+                    affinity: Affinity::Upstream
+                }
+            ),
+            Err(PositionError::NotALeaf { .. })
+        ));
+    }
+
+    #[test]
+    fn resolve_rejects_offsets_inside_code_points() {
+        let mut document = Document::new();
+        let cjk = document.append_block(None, paragraph("你好")).unwrap();
+        let index = document.index();
+        let hit = index.leaf_at(2).unwrap();
+        assert_eq!(hit.block_id, cjk);
+        assert_eq!(hit.offset, 1);
+
+        assert!(matches!(
+            index.resolve_position(&document, DocPos::new(2), Affinity::Downstream),
+            Err(PositionError::IllegalBoundary)
+        ));
+        assert!(matches!(
+            index.to_doc_pos(
+                &document,
+                Position {
+                    block_id: cjk,
+                    offset: 1,
+                    affinity: Affinity::Downstream
+                }
+            ),
+            Err(PositionError::IllegalBoundary)
+        ));
     }
 }

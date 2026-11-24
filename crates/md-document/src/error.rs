@@ -62,6 +62,15 @@ pub enum PositionError {
     #[error("position is not on a legal document boundary")]
     IllegalBoundary,
 
+    /// A leaf-local offset is beyond the leaf content.
+    #[error("leaf offset {offset} is out of bounds for {len} units")]
+    OffsetOutOfBounds {
+        /// The rejected local offset.
+        offset: usize,
+        /// Leaf content length.
+        len: usize,
+    },
+
     /// A position references a block that is not a leaf.
     #[error("block id {index}:{generation} is not a leaf")]
     NotALeaf {

@@ -11,6 +11,7 @@ mod error;
 mod id;
 mod index;
 mod inline;
+mod position;
 
 pub use arena::NodeArena;
 pub use block::{Align, BlockKind, BlockNode, FenceStyle};
@@ -21,3 +22,4 @@ pub use index::{BlockLocation, DocumentIndex, LeafHit};
 pub use inline::{
     AtomKind, ImageRef, InlineContent, InlineNormalizeChange, LinkRef, MarkFlags, Marks, Run,
 };
+pub use position::{Affinity, BlockGapPosition, DocPos, Position};
