@@ -1316,3 +1316,13 @@
 - IME 预编辑：包含 composition 文本，隐藏原 caret，在预编辑末尾绘制新 caret。
 - 标题栏按钮使用 assets/icons SVG；配置 GPUI AssetSource。
 - 293 个测试通过。
+
+## 2026-11-24 · 搜索/命令输入 caret 与原生拖动
+
+- 搜索框、命令框增加可见 caret 与点击聚焦（FocusHandle）。
+- 搜索打开不再关闭大纲；搜索文本只写一次。
+- Ctrl+A 全选。
+- IME 预编辑末尾 caret；ime_text 包含 composition。
+- Windows 原生拖动：ReleaseCapture + WM_NCLBUTTONDOWN(HTCAPTION)，实测窗口移动成功。
+- 标题栏 SVG 图标与 AssetSource。
+- 293 个测试通过。

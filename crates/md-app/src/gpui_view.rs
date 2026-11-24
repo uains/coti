@@ -625,6 +625,7 @@ impl Render for CotiView {
         let surface = rgba(self.window.view.theme.surface.0);
         let border = rgba(self.window.view.theme.border.0);
         let muted = rgba(self.window.view.theme.muted.0);
+        let accent = rgba(self.window.view.theme.accent.0);
         let title = self.window.state.title();
 
         let minimize = window_icon_button(
@@ -936,13 +937,28 @@ impl Render for CotiView {
                     .bg(surface)
                     .border_1()
                     .border_color(border)
-                    .child(div().flex_1().text_size(px(13.0)).text_color(muted).child(
-                        if self.search.query.is_empty() {
-                            "搜索文档…".to_owned()
-                        } else {
-                            self.search.query.clone()
-                        },
-                    ))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            window.focus(&this.focus_handle, cx);
+                            cx.notify();
+                        }),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .gap(px(1.0))
+                            .text_size(px(13.0))
+                            .text_color(muted)
+                            .child(if self.search.query.is_empty() {
+                                "搜索文档…".to_owned()
+                            } else {
+                                self.search.query.clone()
+                            })
+                            .child(div().w(px(1.5)).h(px(15.0)).bg(accent)),
+                    )
                     .child(div().text_size(px(11.0)).text_color(muted).child(count))
                     .child(
                         div()
