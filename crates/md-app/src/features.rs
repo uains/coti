@@ -268,10 +268,13 @@ fn document_plain_text(document: &Document) -> String {
                 Some(BlockKind::Paragraph(content))
                 | Some(BlockKind::Heading { content, .. })
                 | Some(BlockKind::TableCell { content }) => {
-                    output.push_str(&content.plain_text());
-                    output.push(' ');
+                    let text = content.plain_text();
+                    if !text.is_empty() {
+                        output.push_str(&text);
+                        output.push(' ');
+                    }
                 }
-                Some(BlockKind::CodeBlock { text, .. }) => {
+                Some(BlockKind::CodeBlock { text, .. }) if !text.as_str().is_empty() => {
                     output.push_str(text.as_str());
                     output.push(' ');
                 }

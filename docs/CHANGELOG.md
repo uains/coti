@@ -1266,3 +1266,15 @@
 - 鼠标坐标扣除标题栏高度。
 - Release `dist/coti.exe` 15.9 MB；293 测试通过。
 - 仍缺：平台 IME 预编辑、原生菜单栏、安装包/图标/签名。
+
+## 2026-11-24 · IME、并排大纲与界面壳层
+
+- 实现 GPUI `EntityInputHandler`：
+  - UTF-16 ↔ DocPos 映射、text_for_range、selected/marked range。
+  - replace_text_in_range 提交；replace_and_mark_text_in_range 预编辑；unmark/cancel。
+  - bounds_for_range / selection_bounds_for_range / character_index_for_point。
+  - 预编辑文本叠加绘制在 caret 处。
+- DocumentElement paint 调用 `window.handle_input`；render 保持焦点。
+- 大纲改为 flex 兄弟面板，不再绝对定位覆盖正文。
+- 标题栏菜单/搜索/大纲/命令/主题、状态栏、本地图片绘制。
+- 293 个测试通过。
