@@ -1009,3 +1009,11 @@
 - 跨容器/非 Inline 叶明确拒绝。
 - `md-editor` 53 个测试；全 Workspace 205 个测试通过。
 - 仍待实现：Tab/Shift+Tab、List/Quote/Table 专用规则、随机 Intent 属性测试。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第六批）：Tab / Shift+Tab
+
+- 新增 `RuleId::CHANGE_INDENT` 与 guard。
+- CodeBlock：Tab 插入 `\t`，Shift+Tab 删除前一个 `\t`。
+- Paragraph/Heading/TableCell：Tab 明确 no-op，遵循设计 T06。
+- ListItem 缩进/反缩进尚未实现，需嵌套 List 结构规则。
+- `md-editor` 56 个测试；全 Workspace 208 个测试通过。

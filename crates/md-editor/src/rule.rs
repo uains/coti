@@ -26,6 +26,8 @@ impl RuleId {
     pub const ENTER: Self = Self(0x0203);
     /// Delete forward by grapheme/atom.
     pub const DELETE_FORWARD: Self = Self(0x0204);
+    /// Indent or outdent the current context.
+    pub const CHANGE_INDENT: Self = Self(0x0205);
 
     /// Returns the numeric id.
     #[must_use]
@@ -122,6 +124,10 @@ fn delete_forward(ctx: &Ctx<'_>) -> bool {
     matches!(ctx.intent, Intent::DeleteForward)
 }
 
+fn change_indent(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::ChangeIndent { .. })
+}
+
 static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::MOVE_LEFT,
@@ -154,6 +160,10 @@ static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::DELETE_FORWARD,
         guard: delete_forward,
+    },
+    Rule {
+        id: RuleId::CHANGE_INDENT,
+        guard: change_indent,
     },
 ];
 

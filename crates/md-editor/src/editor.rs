@@ -179,6 +179,16 @@ impl Editor {
             return Ok(rule_id);
         }
 
+        if rule_id == RuleId::CHANGE_INDENT {
+            let Intent::ChangeIndent { outdent } = intent else {
+                return Err(EditorError::InvalidIntent {
+                    message: "indent rule requires ChangeIndent".to_owned(),
+                });
+            };
+            self.change_indent(outdent)?;
+            return Ok(rule_id);
+        }
+
         if rule_id == RuleId::MOVE_LEFT
             || rule_id == RuleId::MOVE_RIGHT
             || rule_id == RuleId::MOVE_DOC_START
@@ -196,6 +206,70 @@ impl Editor {
         Err(EditorError::InvalidIntent {
             message: format!("rule {rule_id} has no executor"),
         })
+    }
+
+    fn change_indent(&mut self, outdent: bool) -> EditorResult<()> {
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return Err(EditorError::InvalidIntent {
+                message: "indent requires a selection".to_owned(),
+            });
+        };
+        if !selection.is_collapsed() {
+            return Err(EditorError::InvalidIntent {
+                message: "indent on a non-collapsed selection is not implemented".to_owned(),
+            });
+        }
+
+        let index = self.document.index();
+        let resolved =
+            index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+        let Some(BlockKind::CodeBlock { text, .. }) =
+            self.document.kind(resolved.block_id).cloned()
+        else {
+            return Ok(());
+        };
+
+        let (range, new_pos) = if outdent {
+            if resolved.offset == 0
+                || text.as_str().as_bytes().get(resolved.offset - 1) != Some(&b'\t')
+            {
+                return Ok(());
+            }
+            (
+                TextRange::new(
+                    TextOffset::new(resolved.offset - 1),
+                    TextOffset::new(resolved.offset),
+                ),
+                resolved.offset - 1,
+            )
+        } else {
+            (
+                TextRange::new(
+                    TextOffset::new(resolved.offset),
+                    TextOffset::new(resolved.offset),
+                ),
+                resolved.offset + 1,
+            )
+        };
+
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::ReplaceText {
+            block_id: resolved.block_id,
+            range,
+            text: if outdent {
+                String::new()
+            } else {
+                "\t".to_owned()
+            },
+            marks: Marks::plain(),
+        });
+        transaction.apply(self)?;
+
+        let new_pos = DocPos::new(new_pos);
+        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(())
     }
 
     fn delete_range(&mut self, from: DocPos, to: DocPos) -> EditorResult<()> {
@@ -903,5 +977,64 @@ mod tests {
         let block = editor.document().root_children()[1];
         assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(3));
         assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn tab_in_paragraph_is_noop() {
+        let mut editor = editor_at(1);
+        let rule = editor
+            .dispatch(Intent::ChangeIndent { outdent: false })
+            .unwrap();
+        assert_eq!(rule, RuleId::CHANGE_INDENT);
+        assert_eq!(editor.document_revision(), 0);
+        assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn tab_in_code_block_inserts_tab() {
+        let mut document = Document::new();
+        let root = document.root_children()[0];
+        document
+            .set_block_kind(
+                root,
+                BlockKind::CodeBlock {
+                    lang: None,
+                    text: "ab".into(),
+                    fence: md_document::FenceStyle::BACKTICK,
+                },
+            )
+            .unwrap();
+        let mut editor = Editor::new(document);
+        editor
+            .dispatch(Intent::ChangeIndent { outdent: false })
+            .unwrap();
+        assert_eq!(editor.document().kind(root).unwrap().leaf_len(), Some(3));
+        assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn shift_tab_in_code_block_removes_tab() {
+        let mut document = Document::new();
+        let root = document.root_children()[0];
+        document
+            .set_block_kind(
+                root,
+                BlockKind::CodeBlock {
+                    lang: None,
+                    text: "\tab".into(),
+                    fence: md_document::FenceStyle::BACKTICK,
+                },
+            )
+            .unwrap();
+        let mut editor = Editor::with_selection(
+            document,
+            SelectionSet::new(Selection::collapsed(DocPos::new(1), Affinity::Downstream)),
+        )
+        .unwrap();
+        editor
+            .dispatch(Intent::ChangeIndent { outdent: true })
+            .unwrap();
+        assert_eq!(editor.document().kind(root).unwrap().leaf_len(), Some(2));
+        assert_eq!(head(&editor), DocPos::ZERO);
     }
 }
