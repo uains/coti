@@ -30,7 +30,7 @@ cargo bench
 |---|---|---|---|
 | Unit | 各 crate 的 `#[cfg(test)] mod tests` | 已建立 | 随每个数据结构/算法补齐 |
 | Integration | `crates/md-app/tests/` 与各 crate 的 `tests/` | 已建立 `app_smoke` | 阶段 4 起增加 Markdown 往返夹具 |
-| Property | `crates/md-core/tests/`、`crates/md-document/tests/` | 10 个文本/文档属性 | 阶段 3 扩展 DocPos、Selection，阶段 5/6 扩展 Undo |
+| Property | `crates/md-core/tests/`、`crates/md-document/tests/` | 13 个文本/文档/位置属性 | 阶段 5/6 扩展 Undo、History |
 | Benchmark | `benches/` | 待阶段 7/11 | 输入延迟、布局、滚动 |
 
 ## 当前测试清单
@@ -38,7 +38,7 @@ cargo bench
 | crate | 测试数 | 覆盖内容 |
 |---|---:|---|
 | `md-core` | 32 unit + 7 property | 文本偏移/范围、UTF-8 边界、grapheme、UTF-16、修改原子性、几何、属性往返 |
-| `md-document` | 47 unit + 3 property | Inline、Block、Arena generation/staging、Document 结构、Validator、快照 |
+| `md-document` | 70 unit + 6 property | Inline、Block、Arena、Document、DocumentIndex、DocPos/Position、Selection、Validator |
 | `md-markdown` | 2 | 解析错误、文档错误转发 |
 | `md-editor` | 3 | 过期 revision、非法 Intent、文档错误转发 |
 | `md-layout` | 3 | 几何错误、缺失块布局、文档错误转发 |
@@ -63,6 +63,13 @@ cargo bench
 - 随机删除根块，根级始终保留至少一个 Paragraph。
 - 随机移动根块，原 `BlockId` 保留且 `validate` 始终成立。
 
+`crates/md-document/tests/position_properties.rs` 覆盖：
+
+- 合法 `DocPos` 至少有一种 Affinity 可无损往返。
+- 每个叶子的所有合法局部 offset 都能映射回对应 `DocPos`。
+- 多选区集合倒序排序后通过 `SelectionSet::validate`。
+- 夹具包含空段落、中文、Atom、多层 Quote、嵌套 List、Table/TableCell。
+
 ## 约定
 
 1. 测试名描述“行为 + 条件 + 预期”，例如 `stale_revision_reports_both_revisions`。
@@ -73,12 +80,12 @@ cargo bench
 6. 随机测试使用固定 seed 时可复现；失败输出必须包含 seed 和最小化输入。
 7. 属性测试生成小规模输入（≤64 个 char），避免 CI 时间不可控。
 
-## 阶段 0～2 验收
+## 阶段 0～3 验收
 
 - 七个 crate 均有可执行测试。
 - `cargo test --workspace` 全部通过。
 - `md-app` 集成测试真实启动 `coti` 二进制并检查输出。
 - `md-core` 属性测试覆盖文本边界、grapheme、UTF-16 和修改往返。
-- `md-document` 属性测试覆盖根级插入/删除/移动后的结构不变式。
-- 后续属性测试在阶段 3 扩展到 DocPos/Selection，阶段 5/6 扩展到 Undo，不伪造未实现模块的属性测试。
+- `md-document` 属性测试覆盖根级插入/删除/移动、DocPos/Affinity 往返和多选区排序。
+- 后续属性测试在阶段 5/6 扩展到 Undo/History，不伪造未实现模块的属性测试。
 

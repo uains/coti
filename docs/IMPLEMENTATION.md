@@ -1292,7 +1292,7 @@ docs/
 
 - 阶段 2：`md-document`。建议按 2.1 NodeArena/Generation/FreeList、2.2 BlockKind、2.3 InlineContent/Run/Marks、2.4 Document/Validator 四批实施，最后做随机结构不变式测试。
 
-### 阶段 2：`md-document` 文档模型（已完成，等待确认）
+### 阶段 2：`md-document` 文档模型（已完成，已确认）
 
 **完成日期：** 2026-11-23
 
@@ -1327,7 +1327,7 @@ docs/
 
 - `Document::remove_block` 目前直接 `free`，不是事务安全的 staging 路径；阶段 5 必须改用 staging 或 inverse snapshot（ADR-0004）。
 - `Document` 允许构造期间短暂不完整（例如空 Quote 后再追加子块）；`validate` 是提交前门槛，不是每个结构原语的即时保证。
-- `DocumentIndex` 尚未加入；阶段 3 再补充叶子顺序、长度前缀与位置映射。
+- `DocumentIndex` 在阶段 2 完成时尚未加入；阶段 3 已补充（见下）。
 - `BlockNode.source` 暂缺；阶段 4 前必须按 ADR-0005 重新决策。
 - `BlockKind::validate` 拒绝空 Quote/List/ListItem/Table/TableRow；解析器需要在空容器场景补空 Paragraph。
 - `NodeArena::alloc` 在 `u32` 槽位空间耗尽时 panic；这是硬上限，不是用户输入错误。
@@ -1335,5 +1335,54 @@ docs/
 #### 下一步
 
 - 阶段 3：`DocumentIndex`、`DocPos`、`Position`、`Selection`。建议先实现 DocPos/Affinity/Block Separator 与前缀索引，再实现双向位置转换和 Selection，最后做随机位置属性测试。
+
+### 阶段 3：DocumentIndex、DocPos 与 Selection（已完成，等待确认）
+
+**完成日期：** 2026-11-24
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 3.1 DocumentIndex | 完成 | `leaf_order`、`block_locations`、`parent_index`、Fenwick、重建与校验 |
+| 3.2 DocPos 与 Position | 完成 | `DocPos`、`Affinity`、`Position`、`BlockGapPosition`、Separator 解析、双向转换 |
+| 3.3 Selection | 完成 | `Anchor`、`Selection`、`SelectionSet`、Range/Node/TableCells、排序与校验 |
+| 3.4 属性测试 | 完成 | 合法 DocPos 往返、叶子边界、多选区排序 |
+
+#### 当前接口
+
+- `md_document::{DocumentIndex, BlockLocation, LeafHit}`。
+- `md_document::{DocPos, Affinity, Position, BlockGapPosition}`。
+- `md_document::{Anchor, CellPos, Selection, SelectionKind, SelectionSet, SelectionError}`。
+- `Document` 持有索引；`Document::index()`、`rebuild_index()`、`validate` 同步检查。
+- Separator 解析：`Upstream` 前叶末尾，`Downstream` 后叶开头；空叶子 `Downstream` 可定位。
+- 索引 Fenwick cell 为 `leaf_len + 1`，总长度减去尾部 1 个 Separator。
+
+#### 验证结果
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`：通过。
+- `cargo test --workspace --locked`：129 个测试通过。
+  - `md-document` 70 个单元测试 + 6 个属性测试。
+- 位置属性测试覆盖空段落、中文、Atom、多层 Quote、嵌套 List、Table/TableCell。
+- `./scripts/check-layering.ps1`：通过；`md-document` 依赖树仍无 GPUI。
+
+#### 已知问题与偏差
+
+- `DocumentIndex` 每次结构修改后全量重建，复杂度 O(n)；阶段 7 性能测试后再决定是否增量维护。
+- `resolve_position` 拒绝落在 UTF-8 码点或 Atom 内部的 `DocPos`，不静默吸附；调用方必须先落在合法边界。
+- `SelectionKind::TableCells` 增加 `table: BlockId`，这是设计示例之外的必要补充。
+- `Node` / `TableCells` 的 anchor/head 是占位值；语义校验由 kind 负责。
+- Selection 尚未与 PositionMapping 关联；阶段 5 事务提交时补充。
+- `BlockNode.source` 仍未加入；阶段 4 前必须按 ADR-0005 决策 SourceHint 归属。
+- 多选区重叠只检查 Range 与 Range；Node/TableCells 与 Range 的交叉策略留给 Editor。
+
+#### 下一步
+
+- 阶段 4：`md-markdown`。进入前必须先确定 SourceHint 归属（ADR-0005）：候选为 `SourceSpan` + 侧表、完整 SourceHint 移入 `md-document`、或其他保持单向依赖的方案。
+- 建议阶段 4 拆为：
+  1. SourceHint ADR + 测试夹具/200 篇真实 Markdown 语料准备。
+  2. pulldown-cmark 方言配置 + Parser/Builder 基础块与 Inline/Marks/Atom。
+  3. Frontmatter、脚注、数学、HTML 等特殊节点。
+  4. Serializer：pristine 切片、dirty 重排、容器重缩进。
+  5. 200 篇逐字节保真 + `parse(serialize(doc)) ≅ doc` 属性测试。
 
 ---

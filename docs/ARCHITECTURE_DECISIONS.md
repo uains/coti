@@ -156,3 +156,35 @@ Undo 需要恢复被删除节点的原 `BlockId`；如果删除时立即递增 g
 
 - 阶段 4 前必须补充 ADR 或修订本条，不能直接沿用 `BlockNode` 示例。
 - 节点拆分/合并/移动时 SourceHint 的继承规则尚未落地，属于阶段 4 的设计任务。
+
+## ADR-0006：DocumentIndex 归属与根级 Gap 表示
+
+- **状态：** Accepted
+- **日期：** 2026-11-24
+- **影响范围：** `Document`、`DocumentIndex`、`BlockGapPosition`、`Selection`
+
+### 背景
+
+DocumentIndex 是派生缓存，但 Selection、Layout 和 Editor 都需要与同一份文档结构一致的索引。根级插入点没有父 BlockId；`BlockGapPosition` 需要一种明确表示。表格单元格选择如果只有 `(row, column)`，无法定位所属表格。
+
+### 决策
+
+1. `Document` 持有 `DocumentIndex`。
+2. 每次结构修改后重建索引；`Document::validate` 同时校验索引一致性。
+3. `BlockGapPosition.parent` 使用 `Option<BlockId>`，`None` 表示根级间隙。
+4. `SelectionKind::TableCells` 额外保存 `table: BlockId`。
+5. 第一版索引采用全量重建，不做增量维护。
+
+### 理由
+
+- 单一所有者避免 Document、Editor、Layout 各自持有不同版本的索引。
+- 重建优先保证正确性；10 万字目标下，结构修改频率远低于文本输入，后续可用基准决定是否增量更新。
+- `Option<BlockId>` 比哨兵 id 更不易与真实 Arena 索引混淆。
+- 表格选择必须知道 table，才能在 Table 的 `aligns/rows` 上做边界校验。
+
+### 后果
+
+- 每次 `insert_block`/`remove_block`/`move_block` 为 O(n) 索引重建；阶段 7 性能测试若证明不足，再引入增量维护。
+- `Node` / `TableCells` 选择的 anchor/head 是占位值，不参与其语义校验。
+- 索引陈旧由 `Document::validate` 发现；事务提交前必须调用。
+- 后续 Layout/Selection 必须通过 Document 的公开索引访问，不得各自重建一份长期缓存。
