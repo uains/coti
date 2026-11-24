@@ -40,7 +40,7 @@ cargo bench
 | `md-core` | 32 unit + 7 property | 文本偏移/范围、UTF-8 边界、grapheme、UTF-16、修改原子性、几何、属性往返 |
 | `md-document` | 70 unit + 6 property | Inline、Block、Arena、Document、DocumentIndex、DocPos/Position、Selection、Validator |
 | `md-markdown` | 10 unit + 4 integration | 解析器、Serializer、200 篇夹具逐字节保真/重解析/稳定性 |
-| `md-editor` | 3 | 过期 revision、非法 Intent、文档错误转发 |
+| `md-editor` | 22 | Intent、Editor 状态、Rule 表、Move 规则、grapheme/Atom/跨叶光标 |
 | `md-layout` | 3 | 几何错误、缺失块布局、文档错误转发 |
 | `md-render` | 2 | 资源错误、布局错误转发 |
 | `md-app` | 2 unit + 2 integration | 日志初始化幂等、入口返回、跨层 source 链、真实二进制启动 |
@@ -101,4 +101,10 @@ cargo bench
 - `md-document` 属性测试覆盖根级插入/删除/移动、DocPos/Affinity 往返和多选区排序。
 - `md-markdown` 200 篇合成夹具通过 pristine 逐字节相等、dirty 重解析与稳定性。
 - 后续属性测试在阶段 5/6 扩展到 Undo/History，不伪造未实现模块的属性测试。
+
+## 阶段 5（进行中）
+
+- 5.1 已完成：`md-editor` 22 个测试，覆盖 4 条 Move RuleId、CJK/grapheme/Atom/跨叶/扩展选区。
+- Operation、Transaction、PositionMapping 与编辑规则表尚未完成；当前不对阶段 5 做整体验收。
+- 后续每批完成后更新本文件。
 

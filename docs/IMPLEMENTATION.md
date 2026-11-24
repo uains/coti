@@ -1385,7 +1385,7 @@ docs/
   4. Serializer：pristine 切片、dirty 重排、容器重缩进。
   5. 200 篇逐字节保真 + `parse(serialize(doc)) ≅ doc` 属性测试。
 
-### 阶段 4：`md-markdown` 解析与序列化（已完成，等待确认）
+### 阶段 4：`md-markdown` 解析与序列化（已完成，已确认）
 
 **完成日期：** 2026-11-24
 
@@ -1436,5 +1436,46 @@ docs/
   4. PositionMapping 原语与组合。
   5. Enter/Backspace/DeleteForward/Tab 等规则表与夹具。
   6. 随机 Intent 属性测试；History 在阶段 6 接入。
+
+### 阶段 5：`md-editor` 编辑内核（进行中）
+
+**当前进度：** 5.1 完成；阶段 5 未完成。
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 5.1 Intent / Editor / Rule 表 | 完成 | `Intent`、`Editor`、`EditorConfig`、`Composition`、`RuleId`、静态 Move 规则 |
+| 5.2 Operation | 未开始 | 文本/Inline/Block/Move/Split/Join + inverse |
+| 5.3 Transaction | 未开始 | 快照回滚、preflight、validate、ChangeSet |
+| 5.4 PositionMapping | 未开始 | 映射原语与组合 |
+| 5.5 Rule Table | 未开始 | Enter/Backspace/Delete/Tab/DeleteRange |
+| 5.6 属性测试 | 未开始 | 随机 Intent、选区映射、回滚 |
+
+#### 当前接口
+
+- `md_editor::{Intent, MoveDirection, BlockStyle}`。
+- `md_editor::{Editor, EditorConfig, Composition}`。
+- `md_editor::{RuleId, Rule, Ctx, match_rule}`。
+- `DocumentIndex::{prev_cursor, next_cursor}`。
+- `InlineContent::{prev_offset, next_offset}`。
+- 当前只注册 MoveLeft/MoveRight/MoveDocStart/MoveDocEnd 四条规则。
+
+#### 验证结果
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：167 个测试通过。
+  - `md-editor` 22 个测试。
+- Move 规则覆盖：每条 RuleId 3 个以上用例；grapheme、CJK、Atom、跨叶、DocStart/DocEnd、扩展选区。
+
+#### 已知问题
+
+- 其他 Intent 尚未注册规则，当前返回 `InvalidIntent`；阶段 5 未完成。
+- Rule 表目前只有 guard；apply 由 Editor 按 RuleId 分派，等 Operation/Transaction 落地后统一。
+- Move 仅支持 Range 选择；Node/TableCells 移动未实现。
+- 多选区 Move 只映射 head，尚未处理结构操作与选区合并。
+
+#### 下一步
+
+- 5.2：Operation 原语与 inverse。优先实现文本替换与块结构操作，再接入 5.3 Transaction。
 
 ---
