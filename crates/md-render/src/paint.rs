@@ -1,7 +1,7 @@
 //! Pure paint planning from layout geometry.
 
 use md_core::Rect;
-use md_document::{BlockKind, DocPos, Document, SelectionSet};
+use md_document::{AtomKind, BlockKind, DocPos, Document, SelectionSet};
 use md_layout::{BlockLayout, LayoutKind, LayoutTree};
 
 use crate::theme::{Color, PaintCommand, PaintLayer, PaintPlan, Theme};
@@ -91,31 +91,65 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
         _ => theme.text,
     });
     for line in &block.lines {
-        let text: String = line
-            .clusters
-            .iter()
-            .filter(|cluster| !cluster.hard_break)
-            .map(|cluster| cluster.text.as_str())
-            .collect();
-        if text.is_empty() {
-            continue;
+        let mut text = String::new();
+        let mut start_x = line.rect.left();
+        let mut cursor_x = line.rect.left();
+        for cluster in &line.clusters {
+            if cluster.hard_break {
+                continue;
+            }
+            if let Some(AtomKind::Image(image)) = &cluster.atom {
+                if !text.is_empty() {
+                    plan.push(
+                        PaintLayer::Glyphs,
+                        PaintCommand::Text {
+                            rect: Rect::new(
+                                start_x,
+                                line.rect.top(),
+                                (cursor_x - start_x).max(1.0),
+                                line.rect.height(),
+                            ),
+                            text: std::mem::take(&mut text),
+                            color,
+                            font_size: line.font_size,
+                            font_weight: line.font_weight,
+                            mono: line.mono,
+                        },
+                    );
+                }
+                let width = cluster.advance.max(64.0);
+                plan.push(
+                    PaintLayer::Atoms,
+                    PaintCommand::Image {
+                        rect: Rect::new(cursor_x, line.rect.top(), width, line.rect.height()),
+                        source: image.destination().to_owned(),
+                    },
+                );
+                cursor_x += width;
+                start_x = cursor_x;
+            } else {
+                text.push_str(&cluster.text);
+                cursor_x += cluster.advance;
+            }
         }
-        plan.push(
-            PaintLayer::Glyphs,
-            PaintCommand::Text {
-                rect: Rect::new(
-                    line.rect.left(),
-                    line.rect.top(),
-                    line.rect.width().max(1.0),
-                    line.rect.height(),
-                ),
-                text,
-                color,
-                font_size: line.font_size,
-                font_weight: line.font_weight,
-                mono: line.mono,
-            },
-        );
+        if !text.is_empty() {
+            plan.push(
+                PaintLayer::Glyphs,
+                PaintCommand::Text {
+                    rect: Rect::new(
+                        start_x,
+                        line.rect.top(),
+                        (cursor_x - start_x).max(1.0),
+                        line.rect.height(),
+                    ),
+                    text,
+                    color,
+                    font_size: line.font_size,
+                    font_weight: line.font_weight,
+                    mono: line.mono,
+                },
+            );
+        }
     }
     let child_inherited = match block.kind {
         LayoutKind::Quote | LayoutKind::Footnote => Some(theme.quote_text),
