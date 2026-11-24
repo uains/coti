@@ -91,31 +91,68 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
         _ => theme.text,
     });
     for line in &block.lines {
-        let mut text = String::new();
-        let mut start_x = line.rect.left();
+        let flush = |plan: &mut PaintPlan,
+                     text: String,
+                     marks: &md_document::Marks,
+                     start_x: f32,
+                     end_x: f32| {
+            if text.is_empty() {
+                return;
+            }
+            let is_code = marks.flags.contains(md_document::MarkFlags::CODE);
+            let is_link = marks.link.is_some();
+            let font_weight = if marks.flags.contains(md_document::MarkFlags::STRONG) {
+                600.0
+            } else {
+                line.font_weight
+            };
+            if is_code {
+                plan.push(
+                    PaintLayer::Decorations,
+                    PaintCommand::FillRect {
+                        rect: Rect::new(
+                            start_x - 2.0,
+                            line.rect.top() + 1.0,
+                            (end_x - start_x).max(1.0) + 4.0,
+                            (line.rect.height() - 2.0).max(1.0),
+                        ),
+                        color: theme.code_background,
+                    },
+                );
+            }
+            plan.push(
+                PaintLayer::Glyphs,
+                PaintCommand::Text {
+                    rect: Rect::new(
+                        start_x,
+                        line.rect.top(),
+                        (end_x - start_x).max(1.0),
+                        line.rect.height(),
+                    ),
+                    text,
+                    color: if is_code {
+                        theme.code_text
+                    } else if is_link {
+                        theme.accent
+                    } else {
+                        color
+                    },
+                    font_size: line.font_size,
+                    font_weight,
+                    mono: is_code || line.mono,
+                },
+            );
+        };
+
+        let mut current: Option<(md_document::Marks, f32, String)> = None;
         let mut cursor_x = line.rect.left();
         for cluster in &line.clusters {
             if cluster.hard_break {
                 continue;
             }
             if let Some(AtomKind::Image(image)) = &cluster.atom {
-                if !text.is_empty() {
-                    plan.push(
-                        PaintLayer::Glyphs,
-                        PaintCommand::Text {
-                            rect: Rect::new(
-                                start_x,
-                                line.rect.top(),
-                                (cursor_x - start_x).max(1.0),
-                                line.rect.height(),
-                            ),
-                            text: std::mem::take(&mut text),
-                            color,
-                            font_size: line.font_size,
-                            font_weight: line.font_weight,
-                            mono: line.mono,
-                        },
-                    );
+                if let Some((marks, start_x, text)) = current.take() {
+                    flush(plan, text, &marks, start_x, cursor_x);
                 }
                 let width = cluster.advance.max(64.0);
                 plan.push(
@@ -126,29 +163,24 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
                     },
                 );
                 cursor_x += width;
-                start_x = cursor_x;
             } else {
-                text.push_str(&cluster.text);
+                let needs_new = current
+                    .as_ref()
+                    .is_none_or(|(marks, _, _)| marks != &cluster.marks);
+                if needs_new {
+                    if let Some((marks, start_x, text)) = current.take() {
+                        flush(plan, text, &marks, start_x, cursor_x);
+                    }
+                    current = Some((cluster.marks.clone(), cursor_x, String::new()));
+                }
+                if let Some((_, _, text)) = current.as_mut() {
+                    text.push_str(&cluster.text);
+                }
                 cursor_x += cluster.advance;
             }
         }
-        if !text.is_empty() {
-            plan.push(
-                PaintLayer::Glyphs,
-                PaintCommand::Text {
-                    rect: Rect::new(
-                        start_x,
-                        line.rect.top(),
-                        (cursor_x - start_x).max(1.0),
-                        line.rect.height(),
-                    ),
-                    text,
-                    color,
-                    font_size: line.font_size,
-                    font_weight: line.font_weight,
-                    mono: line.mono,
-                },
-            );
+        if let Some((marks, start_x, text)) = current {
+            flush(plan, text, &marks, start_x, cursor_x);
         }
     }
     let child_inherited = match block.kind {
@@ -365,6 +397,37 @@ mod tests {
     use md_core::Size;
     use md_document::{Affinity, Anchor, DocPos, Document, InlineContent, Selection, SelectionSet};
     use md_layout::{LayoutEnv, LayoutTree, ResolvedStyle};
+
+    #[test]
+    fn inline_code_uses_monospace_and_background() {
+        let mut document = Document::new();
+        let mut content = InlineContent::new();
+        content.push_text(
+            "GPUI",
+            md_document::Marks::with_flags(md_document::MarkFlags::CODE),
+        );
+        document
+            .set_inline_content(document.root_children()[0], content)
+            .unwrap();
+        let env = LayoutEnv::new(Size::new(300.0, 200.0), ResolvedStyle::default());
+        let layout = LayoutTree::full(&document, env);
+        let theme = Theme::default();
+        let plan = build_paint_plan(
+            &layout,
+            &document,
+            &SelectionSet::new(Selection::collapsed(DocPos::ZERO, Affinity::Downstream)),
+            None,
+            &theme,
+        );
+        assert!(plan.items.iter().any(|item| matches!(
+            &item.command,
+            PaintCommand::Text { text, mono: true, .. } if text == "GPUI"
+        )));
+        assert!(plan.items.iter().any(|item| matches!(
+            &item.command,
+            PaintCommand::FillRect { color, .. } if *color == theme.code_background
+        )));
+    }
 
     #[test]
     fn table_grid_uses_column_boundaries_and_skips_last_cell() {

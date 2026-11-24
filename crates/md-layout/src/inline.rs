@@ -1,7 +1,7 @@
 //! Inline cluster layout, line breaking, and caret geometry.
 
 use md_core::{Point, Rect, Size};
-use md_document::{AtomKind, InlineContent, Run};
+use md_document::{AtomKind, InlineContent, MarkFlags, Marks, Run};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::measure::TextMeasurer;
@@ -22,6 +22,8 @@ pub struct Cluster {
     pub atom: Option<AtomKind>,
     /// Whether this cluster forces a line break.
     pub hard_break: bool,
+    /// Inline marks for this cluster.
+    pub marks: Marks,
 }
 
 /// One laid-out line.
@@ -136,8 +138,15 @@ pub fn layout_inline(
     let mut base = 0;
     for run in content.runs() {
         match run {
-            Run::Text { text, .. } => {
-                let advances = measurer.cluster_advances(text.as_str(), style);
+            Run::Text { text, marks } => {
+                let mut run_style = *style;
+                if marks.flags.contains(MarkFlags::CODE) {
+                    run_style.mono = true;
+                }
+                if marks.flags.contains(MarkFlags::STRONG) {
+                    run_style.weight = 600.0;
+                }
+                let advances = measurer.cluster_advances(text.as_str(), &run_style);
                 for ((byte, grapheme), advance) in
                     text.as_str().grapheme_indices(true).zip(advances)
                 {
@@ -149,11 +158,12 @@ pub fn layout_inline(
                         advance,
                         atom: None,
                         hard_break: false,
+                        marks: marks.clone(),
                     });
                 }
                 base = clusters.last().map_or(base, |cluster| cluster.end);
             }
-            Run::Atom { kind, .. } => {
+            Run::Atom { kind, marks } => {
                 let start = base;
                 let hard_break = matches!(kind, AtomKind::HardBreak);
                 clusters.push(Cluster {
@@ -169,6 +179,7 @@ pub fn layout_inline(
                     advance: measurer.atom_advance(kind, style),
                     atom: Some(kind.clone()),
                     hard_break,
+                    marks: marks.clone(),
                 });
                 base = start + 1;
             }
