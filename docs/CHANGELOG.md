@@ -1462,3 +1462,11 @@
 - Backspace/Enter/InsertText/ChangeIndent 统一使用 selection affinity。
 - 新增点击行尾外侧、左右移动列表边界、列表后段落边界测试。
 - 312 个测试通过。
+
+## 2026-11-24 · 用 caret 几何距离决定点击 affinity
+
+- 同一 DocPos 同时计算 Upstream/Downstream 两个 caret 矩形。
+- 点击后选择离鼠标更近的 caret，避免点在上一行行末却得到下一行开头。
+- 布局新增 `caret_rect_with_affinity`，并验证边界两侧 caret 坐标不同。
+- 保留纵向最近行回退与行尾外侧 Upstream。
+- 313 个测试通过。

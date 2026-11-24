@@ -170,6 +170,28 @@ impl LayoutTree {
         Some((DocPos::new(start + local), affinity))
     }
 
+    /// Returns the caret rectangle for a position resolved with an affinity.
+    #[must_use]
+    pub fn caret_rect_with_affinity(
+        &self,
+        document: &Document,
+        pos: DocPos,
+        affinity: Affinity,
+    ) -> Option<Rect> {
+        let resolved = self.index.resolve_position(document, pos, affinity).ok()?;
+        let layout = self.block_outer(resolved.block_id)?;
+        let line = layout
+            .lines
+            .iter()
+            .find(|line| resolved.offset >= line.start && resolved.offset <= line.end)?;
+        Some(Rect::new(
+            line.x_for_offset(resolved.offset),
+            line.rect.top(),
+            1.0,
+            line.rect.height(),
+        ))
+    }
+
     /// Returns the caret rectangle for a document position.
     #[must_use]
     pub fn caret_rect(&self, pos: DocPos) -> Option<Rect> {
@@ -883,6 +905,24 @@ mod tests {
 
     fn paragraph(text: &str) -> BlockKind {
         BlockKind::Paragraph(InlineContent::from_text(text))
+    }
+
+    #[test]
+    fn affinity_caret_rects_differ_at_block_boundary() {
+        let mut document = Document::new();
+        document
+            .set_inline_content(document.root_children()[0], InlineContent::from_text("abc"))
+            .unwrap();
+        document.append_block(None, paragraph("def")).unwrap();
+        let tree = LayoutTree::full(&document, env(400.0));
+        let up = tree
+            .caret_rect_with_affinity(&document, DocPos::new(3), Affinity::Upstream)
+            .unwrap();
+        let down = tree
+            .caret_rect_with_affinity(&document, DocPos::new(3), Affinity::Downstream)
+            .unwrap();
+        assert!(up.top() < down.top());
+        assert!(up.left() > down.left());
     }
 
     #[test]

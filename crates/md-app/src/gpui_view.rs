@@ -712,7 +712,46 @@ impl CotiView {
             f32::from(event.position.x),
             (f32::from(event.position.y) - TITLEBAR_HEIGHT) + self.window.view.scroll.offset_y,
         );
-        if let Some((position, affinity)) = self.window.view.layout.position_with_affinity(point) {
+        if let Some((position, mut affinity)) =
+            self.window.view.layout.position_with_affinity(point)
+        {
+            let document = self.window.state.editor().document();
+            let distance = |rect: md_core::Rect| {
+                let dx = if point.x < rect.left() {
+                    rect.left() - point.x
+                } else if point.x > rect.right() {
+                    point.x - rect.right()
+                } else {
+                    0.0
+                };
+                let dy = if point.y < rect.top() {
+                    rect.top() - point.y
+                } else if point.y > rect.bottom() {
+                    point.y - rect.bottom()
+                } else {
+                    0.0
+                };
+                dx * dx + dy * dy
+            };
+            let up = self.window.view.layout.caret_rect_with_affinity(
+                document,
+                position,
+                md_document::Affinity::Upstream,
+            );
+            let down = self.window.view.layout.caret_rect_with_affinity(
+                document,
+                position,
+                md_document::Affinity::Downstream,
+            );
+            if let (Some(up), Some(down)) = (up, down)
+                && up != down
+            {
+                affinity = if distance(up) <= distance(down) {
+                    md_document::Affinity::Upstream
+                } else {
+                    md_document::Affinity::Downstream
+                };
+            }
             self.dragging = true;
             self.drag_anchor = Some(position);
             let selection = md_document::SelectionSet::new(md_document::Selection::collapsed(
