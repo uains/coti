@@ -29,6 +29,8 @@ use crate::commands::{self, Command};
 use crate::config::AppConfig;
 
 const TITLEBAR_HEIGHT: f32 = 36.0;
+const STATUS_BAR_HEIGHT: f32 = 26.0;
+const OUTLINE_WIDTH: f32 = 240.0;
 
 fn start_window_drag(window: &Window) {
     #[cfg(target_os = "windows")]
@@ -716,7 +718,12 @@ impl CotiView {
         self.reset_blink(cx);
         window.focus(&self.focus_handle, cx);
         let point = md_core::Point::new(
-            f32::from(event.position.x),
+            f32::from(event.position.x)
+                - if self.outline_open {
+                    OUTLINE_WIDTH
+                } else {
+                    0.0
+                },
             (f32::from(event.position.y) - TITLEBAR_HEIGHT) + self.window.view.scroll.offset_y,
         );
         if let Some((position, mut affinity)) =
@@ -780,7 +787,12 @@ impl CotiView {
             return;
         }
         let point = md_core::Point::new(
-            f32::from(event.position.x),
+            f32::from(event.position.x)
+                - if self.outline_open {
+                    OUTLINE_WIDTH
+                } else {
+                    0.0
+                },
             (f32::from(event.position.y) - TITLEBAR_HEIGHT) + self.window.view.scroll.offset_y,
         );
         let Some(position) = self.window.view.layout.position_at_point(point) else {
@@ -822,6 +834,21 @@ impl Render for CotiView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.focus_handle.is_focused(window) {
             window.focus(&self.focus_handle, cx);
+        }
+        let window_viewport = window.viewport_size();
+        let content_width = (f32::from(window_viewport.width)
+            - if self.outline_open {
+                OUTLINE_WIDTH
+            } else {
+                0.0
+            })
+        .max(1.0);
+        let content_height =
+            (f32::from(window_viewport.height) - TITLEBAR_HEIGHT - STATUS_BAR_HEIGHT).max(1.0);
+        if (content_width - self.window.viewport.width).abs() > 0.5
+            || (content_height - self.window.viewport.height).abs() > 0.5
+        {
+            self.window.resize(Size::new(content_width, content_height));
         }
         let font = window.text_style().font();
         let mut measurer = SysMeasurer {
@@ -986,7 +1013,7 @@ impl Render for CotiView {
             let items = features::build_outline(self.window.state.editor().document());
             let mut panel = div()
                 .h_full()
-                .w(px(240.0))
+                .w(px(OUTLINE_WIDTH))
                 .flex_none()
                 .flex()
                 .flex_col()
@@ -1045,7 +1072,7 @@ impl Render for CotiView {
                 .map_or(md_document::DocPos::ZERO, |selection| selection.head.pos),
         );
         let status_bar = div()
-            .h(px(26.0))
+            .h(px(STATUS_BAR_HEIGHT))
             .w_full()
             .flex()
             .items_center()
@@ -2039,7 +2066,7 @@ pub fn run_gui_with_path(path: Option<std::path::PathBuf>) -> anyhow::Result<()>
             };
             let path = path.clone();
             cx.open_window(options, |_, cx| {
-                cx.new(|cx| CotiView::from_path(path, Size::new(1000.0, 564.0), cx))
+                cx.new(|cx| CotiView::from_path(path, Size::new(1000.0, 538.0), cx))
             })
             .expect("create Coti window");
             cx.activate(true);

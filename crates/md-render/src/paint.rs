@@ -214,6 +214,15 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
             }
         }
         LayoutKind::Table => {
+            if let Some(header) = block.children.first() {
+                plan.push(
+                    PaintLayer::Decorations,
+                    PaintCommand::FillRect {
+                        rect: header.rect,
+                        color: theme.table_header,
+                    },
+                );
+            }
             for rect in [
                 Rect::new(block.rect.left(), block.rect.top(), block.rect.width(), 1.0),
                 Rect::new(
@@ -244,15 +253,6 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                 );
             }
             for (row_index, row) in block.children.iter().enumerate() {
-                if row_index == 0 {
-                    plan.push(
-                        PaintLayer::Decorations,
-                        PaintCommand::FillRect {
-                            rect: row.rect,
-                            color: theme.table_header,
-                        },
-                    );
-                }
                 if row_index + 1 < block.children.len() {
                     plan.push(
                         PaintLayer::Decorations,
@@ -267,16 +267,16 @@ fn paint_block_decorations(block: &BlockLayout, plan: &mut PaintPlan, theme: &Th
                         },
                     );
                 }
-                for cell in &row.children {
+                for (cell_index, _) in row.children.iter().enumerate() {
+                    if cell_index + 1 == row.children.len() {
+                        continue;
+                    }
+                    let cell_width = row.rect.width() / row.children.len().max(1) as f32;
+                    let x = row.rect.left() + (cell_index + 1) as f32 * cell_width;
                     plan.push(
                         PaintLayer::Decorations,
                         PaintCommand::FillRect {
-                            rect: Rect::new(
-                                cell.rect.right() - 1.0,
-                                cell.rect.top(),
-                                1.0,
-                                cell.rect.height(),
-                            ),
+                            rect: Rect::new(x - 0.5, row.rect.top(), 1.0, row.rect.height()),
                             color: theme.border,
                         },
                     );
@@ -365,6 +365,75 @@ mod tests {
     use md_core::Size;
     use md_document::{Affinity, Anchor, DocPos, Document, InlineContent, Selection, SelectionSet};
     use md_layout::{LayoutEnv, LayoutTree, ResolvedStyle};
+
+    #[test]
+    fn table_grid_uses_column_boundaries_and_skips_last_cell() {
+        let mut document = Document::new();
+        let table = document
+            .insert_block(
+                None,
+                0,
+                md_document::BlockKind::Table {
+                    aligns: vec![md_document::Align::Left; 2],
+                    rows: vec![],
+                },
+            )
+            .unwrap();
+        let row = document
+            .append_block(
+                Some(table),
+                md_document::BlockKind::TableRow { cells: vec![] },
+            )
+            .unwrap();
+        for text in ["a", "b"] {
+            document
+                .append_block(
+                    Some(row),
+                    md_document::BlockKind::TableCell {
+                        content: InlineContent::from_text(text),
+                    },
+                )
+                .unwrap();
+        }
+        let env = LayoutEnv::new(Size::new(300.0, 200.0), ResolvedStyle::default());
+        let layout = LayoutTree::full(&document, env);
+        let table_layout = &layout.blocks[0];
+        let middle = table_layout.rect.left() + table_layout.rect.width() / 2.0;
+        let cell = &table_layout.children[0].children[0];
+        let plan = build_paint_plan(
+            &layout,
+            &document,
+            &SelectionSet::new(Selection::collapsed(DocPos::ZERO, Affinity::Downstream)),
+            None,
+            &Theme::default(),
+        );
+        let verticals: Vec<_> = plan
+            .items
+            .iter()
+            .filter_map(|item| match &item.command {
+                PaintCommand::FillRect { rect, color }
+                    if *color == Theme::default().border
+                        && rect.width() <= 1.0
+                        && rect.height() > 20.0 =>
+                {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            verticals
+                .iter()
+                .any(|rect| (rect.left() - middle).abs() < 1.5),
+            "missing column divider: {verticals:?}"
+        );
+        assert!(
+            !verticals
+                .iter()
+                .any(|rect| (rect.left() - (cell.rect.right() - 1.0)).abs() < 0.75),
+            "last cell still has inset divider: {verticals:?}"
+        );
+    }
 
     #[test]
     fn paint_plan_orders_layers_and_does_not_mutate_document() {

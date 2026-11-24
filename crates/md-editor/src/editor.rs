@@ -1447,7 +1447,20 @@ impl Editor {
                 ),
             )
         } else {
-            self.primary_local_range(selection.start(), selection.end())?
+            let index = self.document.index();
+            let start =
+                index.resolve_position(&self.document, selection.start(), Affinity::Downstream)?;
+            let end =
+                index.resolve_position(&self.document, selection.end(), Affinity::Upstream)?;
+            if start.block_id != end.block_id {
+                return Err(EditorError::InvalidIntent {
+                    message: "replacing across blocks is not implemented".to_owned(),
+                });
+            }
+            (
+                start.block_id,
+                TextRange::new(TextOffset::new(start.offset), TextOffset::new(end.offset)),
+            )
         };
         let marks = self.pending_marks.clone().unwrap_or_else(Marks::plain);
         let operation = Operation::ReplaceText {
@@ -2569,6 +2582,63 @@ mod tests {
         assert!(output.starts_with("a\n"), "unexpected output: {output:?}");
         assert!(output.contains("- b"), "unexpected output: {output:?}");
         assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn replace_range_inside_table_cell() {
+        let source = "| ab |\n|---|\n| cd |\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let leaf = index
+            .leaf_order()
+            .iter()
+            .find(|leaf| {
+                parsed
+                    .document()
+                    .kind(**leaf)
+                    .and_then(BlockKind::inline_content)
+                    .is_some_and(|content| content.plain_text() == "ab")
+            })
+            .copied()
+            .unwrap();
+        let start = index.leaf_start(index.leaf_index(leaf).unwrap()).unwrap();
+        let len = index.leaf_len(index.leaf_index(leaf).unwrap()).unwrap();
+        let selection = SelectionSet::new(Selection::range(
+            Anchor::new(DocPos::new(start + 1), Affinity::Downstream),
+            Anchor::new(DocPos::new(start + len), Affinity::Upstream),
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::InsertText("X".to_owned())).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("| aX |"), "unexpected output: {output:?}");
+    }
+
+    #[test]
+    fn delete_forward_inside_table_cell() {
+        let source = "| ab |\n|---|\n| cd |\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let leaf = index
+            .leaf_order()
+            .iter()
+            .find(|leaf| {
+                parsed
+                    .document()
+                    .kind(**leaf)
+                    .and_then(BlockKind::inline_content)
+                    .is_some_and(|content| content.plain_text() == "ab")
+            })
+            .copied()
+            .unwrap();
+        let start = index.leaf_start(index.leaf_index(leaf).unwrap()).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(start),
+            Affinity::Downstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteForward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("| b |"), "unexpected output: {output:?}");
     }
 
     #[test]

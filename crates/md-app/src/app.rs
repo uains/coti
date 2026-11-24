@@ -393,6 +393,17 @@ mod tests {
     }
 
     #[test]
+    fn resize_updates_viewport() {
+        let mut window = AppWindow::new(
+            AppState::new(AppConfig::default()),
+            Size::new(1000.0, 538.0),
+        );
+        window.resize(Size::new(720.0, 420.0));
+        assert_eq!(window.viewport, Size::new(720.0, 420.0));
+        assert_eq!(window.view.scroll.offset_y, 0.0);
+    }
+
+    #[test]
     fn sync_view_preserves_scroll_offset() {
         let mut window = AppWindow::new(
             AppState::new(AppConfig::default()),
