@@ -631,13 +631,18 @@ impl Render for CotiView {
 
         let menu_items = commands::menus();
         let mut titlebar = div()
+            .id("titlebar")
             .h(px(36.0))
             .w_full()
             .flex()
             .items_center()
             .bg(surface)
             .border_b_1()
-            .border_color(border);
+            .border_color(border)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, window, _| window.start_window_move()),
+            );
         for (index, menu) in menu_items.iter().enumerate() {
             let active = self.menu_open == Some(index);
             let mut button = div()
@@ -649,6 +654,7 @@ impl Render for CotiView {
                 .text_color(muted)
                 .cursor_pointer()
                 .hover(|style| style.bg(rgba(0x8080_8022)))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.menu_open = if this.menu_open == Some(index) {
                         None
@@ -1426,6 +1432,7 @@ fn toolbar_icon(
         .rounded(px(4.0))
         .cursor_pointer()
         .hover(|style| style.bg(rgba(0x8080_8022)))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(listener)
         .child(svg().path(path).size(px(16.0)).text_color(color))
 }
@@ -1446,6 +1453,7 @@ fn window_icon_button(
         .justify_center()
         .cursor_pointer()
         .hover(move |style| style.bg(hover))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(listener)
         .child(svg().path(path).size(px(14.0)).text_color(color))
 }

@@ -1296,3 +1296,13 @@
 - 标题栏按钮改用 assets/icons SVG：search、panel-left-open/close、command、palette、minimize、maximize、x。
 - 配置 GPUI AssetSource，资源目录 assets/。
 - 293 个测试通过。
+
+## 2026-11-24 · 修复搜索重复/全选/IME 光标/SVG 图标
+
+- 搜索打开不再关闭大纲。
+- 搜索文本只由 key handler 写入一次，避免 EntityInputHandler 重复。
+- Ctrl+A 全选文档。
+- IME 预编辑时正文 caret 隐藏，改为在预编辑末尾绘制 caret；ime_text 包含 composition。
+- 标题栏按钮改用 assets/icons SVG：search、panel-left-open/close、command、palette、minimize、maximize、x。
+- GPUI AssetSource 加载 assets/。
+- 293 个测试通过；Release 16.9 MB。
