@@ -304,6 +304,24 @@ impl AppWindow {
         };
         RenderView::sync(state.editor().document(), viewport, style, theme)
     }
+
+    /// Scrolls so the caret is visible, or centers it in typewriter mode.
+    pub fn scroll_to_caret(&mut self, caret: md_document::DocPos, typewriter: bool) {
+        let Some(rect) = self.view.layout.caret_rect(caret) else {
+            return;
+        };
+        if typewriter {
+            self.view.scroll.offset_y = rect.top() - self.viewport.height * 0.5;
+        } else {
+            let height = self.viewport.height;
+            if rect.top() < self.view.scroll.offset_y {
+                self.view.scroll.offset_y = rect.top();
+            } else if rect.bottom() > self.view.scroll.offset_y + height {
+                self.view.scroll.offset_y = rect.bottom() - height;
+            }
+        }
+        self.view.scroll.clamp(self.view.layout.total_height());
+    }
 }
 
 /// Default config path under the user config directory.

@@ -43,7 +43,7 @@ cargo bench
 | `md-editor` | 89 unit + 4 property | Intent、Editor、规则、Operation/inverse、Transaction、PositionMapping、History、IME、Clipboard |
 | `md-layout` | 19 | 测量、Inline/Block Layout、Hit-test、选区、增量布局、5000 次等价 |
 | `md-render` | 12 | 主题、Paint 分层、Shaping、输入映射、滚动、Image 资源、RenderView |
-| `md-app` | 9 unit + 5 flow + 2 smoke | 配置、文件 IO、原子保存、最近文件、窗口、菜单、跨层 source、二进制启动 |
+| `md-app` | 13 unit + 5 flow + 2 smoke | 配置、文件 IO、原子保存、最近文件、窗口、菜单、大纲/搜索/折叠/状态/导出 |
 
 ## 当前属性测试
 
@@ -107,6 +107,6 @@ cargo bench
 - 5.1 已完成：Move 规则、grapheme/Atom/跨叶光标。
 - 5.2～5.3 已完成：Operation/inverse、Transaction 快照回滚、ChangeSet。
 - 5.4～5.5 第一批已完成：PositionMapping、InsertText/DeleteBackward 规则。
-- 当前 `md-editor` 89 个单元测试 + 4 个属性测试；`md-layout` 19 个测试；`md-render` 12 个测试；总计 283 个测试通过。
+- 当前 `md-editor` 89 个单元测试 + 4 个属性测试；`md-layout` 19 个测试；`md-render` 12 个测试；`md-app` 20 个测试；总计 287 个测试通过。
 - Enter/DeleteForward/DeleteRange/Tab/List/Quote/Table 规则尚未完成；当前不对阶段 5 做整体验收。
 

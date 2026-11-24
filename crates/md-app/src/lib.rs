@@ -8,6 +8,7 @@
 pub mod app;
 pub mod commands;
 pub mod config;
+pub mod features;
 pub mod logging;
 
 pub use app::{AppState, AppWindow, CloseDecision, atomic_write, default_config_path};
