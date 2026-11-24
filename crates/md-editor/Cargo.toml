@@ -12,6 +12,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+md-markdown.workspace = true
 
 [lints]
 workspace = true

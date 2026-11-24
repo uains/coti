@@ -2674,6 +2674,7 @@ version = "0.1.0"
 dependencies = [
  "md-core",
  "md-document",
+ "md-markdown",
  "proptest",
  "thiserror",
 ]

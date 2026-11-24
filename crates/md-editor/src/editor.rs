@@ -935,8 +935,34 @@ impl Editor {
         }
 
         let index = self.document.index();
-        let resolved =
+        let mut resolved =
             index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+        if resolved.offset == 0
+            && selection.head.pos.get() > 0
+            && let Some(previous) = index.leaf_at(selection.head.pos.get() - 1)
+            && previous.offset + 1
+                == self
+                    .document
+                    .kind(previous.block_id)
+                    .and_then(BlockKind::leaf_len)
+                    .unwrap_or(0)
+            && self
+                .document
+                .parent(previous.block_id)
+                .is_some_and(|parent| {
+                    matches!(self.document.kind(parent), Some(BlockKind::ListItem { .. }))
+                })
+            && (selection.head.pos.get() == index.doc_length()
+                || self
+                    .document
+                    .parent(resolved.block_id)
+                    .is_some_and(|parent| {
+                        matches!(self.document.kind(parent), Some(BlockKind::ListItem { .. }))
+                    }))
+        {
+            resolved =
+                index.resolve_position(&self.document, selection.head.pos, Affinity::Upstream)?;
+        }
         let block_id = resolved.block_id;
         let kind =
             self.document
@@ -989,6 +1015,56 @@ impl Editor {
                     message: "enter target is not linked from the root".to_owned(),
                 })?,
         };
+
+        if let Some(parent_id) = parent
+            && matches!(
+                self.document.kind(parent_id),
+                Some(BlockKind::ListItem { .. })
+            )
+            && self
+                .document
+                .children(parent_id)
+                .is_some_and(|children| children.len() == 1)
+            && let Some(list_id) = self.document.parent(parent_id)
+            && matches!(self.document.kind(list_id), Some(BlockKind::List { .. }))
+        {
+            let list_children = self.document.children(list_id).unwrap_or(&[]);
+            if let Some(list_index) = list_children.iter().position(|id| *id == parent_id) {
+                let mut transaction = Transaction::new(self.document_revision());
+                transaction.push(Operation::SetInlineContent {
+                    block_id,
+                    content: left,
+                });
+                transaction.push(Operation::InsertListItem {
+                    list: list_id,
+                    index: list_index + 1,
+                    content: right,
+                });
+                self.commit(transaction)?;
+                let new_item = self.document.children(list_id).unwrap()[list_index + 1];
+                let new_paragraph = self.document.children(new_item).unwrap()[0];
+                let new_leaf =
+                    self.document
+                        .index()
+                        .leaf_index(new_paragraph)
+                        .ok_or_else(|| EditorError::InvalidIntent {
+                            message: "new list item paragraph is not a leaf".to_owned(),
+                        })?;
+                let new_pos = self
+                    .document
+                    .index()
+                    .leaf_start(new_leaf)
+                    .map(DocPos::new)
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "new list item has no document position".to_owned(),
+                    })?;
+                self.selection =
+                    SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
+                self.pending_marks = None;
+                self.state_revision += 1;
+                return Ok(());
+            }
+        }
 
         let mut transaction = Transaction::new(self.document_revision());
         transaction.push(Operation::SetInlineContent {
@@ -1916,6 +1992,75 @@ mod tests {
                 .any(|run| matches!(run.atom_kind(), Some(md_document::AtomKind::HardBreak)))
         );
         assert_eq!(editor.document().root_children().len(), 2);
+    }
+
+    #[test]
+    fn enter_at_list_item_end_serializes_new_item() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(parsed.document().index().doc_length()),
+            Affinity::Downstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        editor
+            .dispatch(Intent::InsertText("123".to_owned()))
+            .unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(
+            output.trim_end().ends_with("- 123"),
+            "unexpected output: {output:?}"
+        );
+        assert!(!output.contains("\n  123"), "unexpected indent: {output:?}");
+    }
+
+    #[test]
+    fn enter_at_list_item_end_creates_sibling_item() {
+        let mut document = Document::new();
+        let original = document.root_children()[0];
+        let list = document
+            .insert_block(
+                None,
+                0,
+                BlockKind::List {
+                    ordered: false,
+                    start: 1,
+                    tight: true,
+                    items: Vec::new(),
+                },
+            )
+            .unwrap();
+        let item = document
+            .insert_block(
+                Some(list),
+                0,
+                BlockKind::ListItem {
+                    task: None,
+                    children: Vec::new(),
+                },
+            )
+            .unwrap();
+        document
+            .append_block(
+                Some(item),
+                BlockKind::Paragraph(InlineContent::from_text("a")),
+            )
+            .unwrap();
+        document.remove_block(original).unwrap();
+        let selection =
+            SelectionSet::new(Selection::collapsed(DocPos::new(1), Affinity::Downstream));
+        let mut editor = Editor::with_selection(document, selection).unwrap();
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        let items = editor.document().children(list).unwrap();
+        assert_eq!(items.len(), 2);
+        let second = items[1];
+        let paragraph = editor.document().children(second).unwrap()[0];
+        assert_eq!(
+            editor.document().kind(paragraph).unwrap().leaf_len(),
+            Some(0)
+        );
+        assert!(editor.document().validate().is_ok());
     }
 
     #[test]

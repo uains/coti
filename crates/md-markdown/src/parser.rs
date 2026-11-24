@@ -613,4 +613,22 @@ mod tests {
     fn parses_frontmatter_and_html_blocks() {
         assert_roundtrip("---\ntitle: Test\n---\n\n<div>\nraw\n</div>\n\nBody.\n");
     }
+    #[test]
+    fn debug_list_tree() {
+        let source = "# T\n\n## S\n\n- a\n- b\n";
+        let parsed = parse(source).unwrap();
+        let document = parsed.document();
+        eprintln!("root={:?}", document.root_children());
+        for leaf in document.index().leaf_order() {
+            eprintln!(
+                "leaf {leaf:?} parent={:?} kind={:?} start={:?}",
+                document.parent(*leaf),
+                document.kind(*leaf).map(|k| k.kind_name()),
+                document
+                    .index()
+                    .leaf_start(document.index().leaf_index(*leaf).unwrap())
+            );
+        }
+        eprintln!("len={}", document.index().doc_length());
+    }
 }

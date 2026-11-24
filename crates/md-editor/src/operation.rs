@@ -42,6 +42,15 @@ pub enum Operation {
         /// Block kind.
         kind: BlockKind,
     },
+    /// Inserts a list item with one paragraph child.
+    InsertListItem {
+        /// Parent list.
+        list: BlockId,
+        /// Item index in the list.
+        index: usize,
+        /// Paragraph content for the new item.
+        content: InlineContent,
+    },
     /// Removes a leaf block.
     RemoveBlock {
         /// Target block.
@@ -170,6 +179,26 @@ impl Operation {
                 Ok(AppliedOperation {
                     inverse: Self::RemoveBlock { id },
                     affected: vec![id],
+                })
+            }
+            Self::InsertListItem {
+                list,
+                index,
+                content,
+            } => {
+                let item = document.insert_block(
+                    Some(*list),
+                    *index,
+                    BlockKind::ListItem {
+                        task: None,
+                        children: Vec::new(),
+                    },
+                )?;
+                let para =
+                    document.append_block(Some(item), BlockKind::Paragraph(content.clone()))?;
+                Ok(AppliedOperation {
+                    inverse: Self::RemoveBlock { id: item },
+                    affected: vec![item, para],
                 })
             }
             Self::RemoveBlock { id } => {
