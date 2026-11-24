@@ -1149,7 +1149,7 @@
 - **AC-02 模型闭合**：200 夹具 canonical 输出重新 parse 后 `Document::content_eq`。
 - **AC-05 增量等价**：已有 5000 次编辑测试。
 - **规模门禁**：100k 字符段落、10k 段落布局 `#[ignore]` 性能门禁。
-- **Release profile**：thin LTO、单 codegen unit、strip symbols。
+- **Release profile**：strip symbols；为保证 GPUI 可交付构建，关闭 thin LTO 并使用 16 codegen units。
 - Undo/Redo 改为 Document 快照权威，修复 JoinBlocks inverse 无法恢复 BlockId 的 redo 失效。
 - 全 Workspace 291 个测试通过。
 - **未完成**：真实 200 篇外部语料、全部 RuleId 覆盖、P95 性能测量、跨平台安装包/图标/签名、真实 GPUI 壳层。
@@ -1175,3 +1175,20 @@
 - Windows 实机 smoke：带 Markdown 文件启动、首帧绘制成功、保持运行。
 - 全 Workspace 291 个测试通过；分层检查通过。
 - **未完成**：滚动事件、IME ElementInputHandler、图片真实绘制、局部重绘/裁剪优化。
+
+## 2026-11-24 · 桌面壳层收尾与可执行文件
+
+- 自定义 GPUI `Element`：`DocumentElement` 直接 `paint_quad` + `ShapedLine::paint`。
+- 滚轮：`on_scroll` 更新 `ScrollState`，按总高度 clamp。
+- 文件交互：Ctrl+O 打开、Ctrl+N 新建、Ctrl+S 保存、Ctrl+Shift+S 另存为；使用原生文件对话框。
+- 窗口标题随文件路径更新。
+- 新增 `scripts/build-release.ps1`，产物 `dist/coti.exe`。
+- 新增 `docs/RELEASE.md`：构建、运行、快捷键、已知限制。
+- 全 Workspace 291 个测试通过；Windows Release 构建与 GUI smoke 已验证。
+
+## 2026-11-24 · 最终可执行文件
+
+- 构建 `dist/coti.exe`（Windows x64，11.5 MB）。
+- Release executable 实机 smoke：打开 Markdown、自定义 Element 首帧渲染、窗口保持运行。
+- 全 Workspace 291 个测试通过；clippy 与分层检查通过。
+- 构建脚本 `scripts/build-release.ps1`；运行说明 `docs/RELEASE.md`。

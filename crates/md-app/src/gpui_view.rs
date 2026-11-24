@@ -3,9 +3,9 @@
 use gpui::{
     App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle, GlobalElementId,
     InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
-    MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, SharedString, Style, Styled,
-    TextAlign, TextRun, Window, WindowBounds, WindowOptions, div, fill, point, px, relative, rgba,
-    size,
+    MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, ScrollDelta, ScrollEvent,
+    SharedString, Style, Styled, TextAlign, TextRun, Window, WindowBounds, WindowOptions, div,
+    fill, point, px, relative, rgba, size,
 };
 use gpui_platform::application;
 use md_core::Size;
@@ -69,11 +69,75 @@ impl CotiView {
         &mut self.window.state
     }
 
+    fn new_document(&mut self) {
+        let config = self.window.state.config().clone();
+        self.window = AppWindow::new(AppState::new(config), self.window.viewport);
+    }
+
+    fn open_dialog(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Markdown", &["md", "markdown"])
+            .pick_file()
+        else {
+            return;
+        };
+        let config = self.window.state.config().clone();
+        match AppState::open_with_config(&path, config) {
+            Ok(state) => {
+                self.window = AppWindow::new(state, self.window.viewport);
+            }
+            Err(error) => {
+                tracing::warn!(target: "md_app", %error, "open failed");
+            }
+        }
+    }
+
+    fn save_as_dialog(&mut self) {
+        let Some(mut path) = rfd::FileDialog::new()
+            .add_filter("Markdown", &["md", "markdown"])
+            .set_file_name("untitled.md")
+            .save_file()
+        else {
+            return;
+        };
+        if path.extension().is_none() {
+            path.set_extension("md");
+        }
+        if let Err(error) = self.window.state.save_as(&path) {
+            tracing::warn!(target: "md_app", %error, "save failed");
+        }
+    }
+
+    fn on_scroll(&mut self, event: &ScrollEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let delta = match event.delta {
+            ScrollDelta::Pixels(delta) => f32::from(delta.y),
+            ScrollDelta::Lines(delta) => delta.y * self.window.view.theme.line_height,
+        };
+        let height = self.window.view.layout.total_height();
+        self.window.view.scroll.scroll_by(delta, height);
+        cx.notify();
+    }
+
     fn on_key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        if modifiers.control && key.eq_ignore_ascii_case("o") {
+            self.open_dialog();
+            cx.notify();
+            return;
+        }
+        if modifiers.control && key.eq_ignore_ascii_case("n") {
+            self.new_document();
+            cx.notify();
+            return;
+        }
         if modifiers.control && key.eq_ignore_ascii_case("s") {
-            let _ = self.window.state.save();
+            if modifiers.shift || self.window.state.path().is_none() {
+                self.save_as_dialog();
+            } else {
+                let _ = self.window.state.save();
+            }
+            cx.notify();
             return;
         }
         let intent = if modifiers.control && key.eq_ignore_ascii_case("z") {
@@ -142,13 +206,15 @@ impl CotiView {
 }
 
 impl Render for CotiView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_window_title(&self.window.state.title());
         div()
             .size_full()
             .overflow_hidden()
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_scroll(cx.listener(Self::on_scroll))
             .child(DocumentElement { view: cx.entity() })
     }
 }

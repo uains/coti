@@ -15,7 +15,7 @@ Coti 的名字来自拉丁语cotidianus（每日的）。它不追求“第二�
 
 ## 开发
 
-当前已接入真实 GPUI 窗口与自定义 `Element` 渲染（ShapeLine + PaintQuad）；仍缺菜单栏、文件对话框、滚动、IME、图片加载与安装包。启动：`cargo run -p md-app -- --gui [file.md]`。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+当前已接入真实 GPUI 窗口、自定义 `Element` 渲染（ShapeLine + PaintQuad）、滚轮、文件对话框与 Ctrl+N/O/S 快捷键；Windows Release 产物为 `dist/coti.exe`。构建见 [docs/RELEASE.md](docs/RELEASE.md)。实施进度见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，逐步变更见 [docs/CHANGELOG.md](docs/CHANGELOG.md)，开发命令与质量门禁见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ```powershell
 cargo run -p md-app

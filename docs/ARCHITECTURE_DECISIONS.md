@@ -239,7 +239,7 @@ ADR-0005 将 `BlockNode.source` 暂缓到阶段 4。Editor 在编辑时必须维
 ### 后果
 
 - `Cargo.lock` 显著增大；首次构建会拉取 Zed/GPUI 依赖。
-- 当前 View 是可运行基线：自定义 Element 渲染、打开文档、键盘编辑、点击定位、Ctrl+S 保存。
+- 当前 View 已使用自定义 `Element` 渲染：`request_layout`/`prepaint`/`paint`，`paint_quad` 与 `ShapedLine.paint`；支持打开/保存、键盘编辑、点击定位、滚轮与窗口标题。
 - 尚缺真实菜单栏、文件对话框、滚动事件、IME 平台绑定、图片加载与自定义 Element。
 
 ### 迁移

@@ -777,10 +777,10 @@ HTML 粘贴属于后续扩展，不列入首个正式交付版本的完成条件
 
 | 步骤 | 状态 | 产物 |
 |---|---|---|
-| 8.1 GPUI 基础 | 完成（基线） | RenderView/PaintPlan + CotiView 真实窗口 |
+| 8.1 GPUI 基础 | 完成（基线） | RenderView/PaintPlan + CotiView + DocumentElement 自定义 Element |
 | 8.2 Shaping | 完成（Fake） | Shaper、FakeShaper、ShapingCache |
-| 8.3 Paint 层级 | 完成（模型） | 8 层 PaintLayer、背景/选区/文本/图片/Caret |
-| 8.4 交互 | 完成（适配） | Key→Intent、点击/拖动、滚动、光标闪烁 |
+| 8.3 Paint 层级 | 完成（GPUI） | paint_quad + ShapedLine.paint；背景/选区/文本/Caret |
+| 8.4 交互 | 完成（GPUI） | Key→Intent、点击定位、滚轮、窗口标题 |
 | 8.5 资源 | 完成（缓存） | ImageState、ResourceCache、version |
 
 ### 阶段 9：`md-app` 桌面应用（应用核心 + GPUI 窗口基线完成）
@@ -942,7 +942,7 @@ HTML 粘贴属于后续扩展，不列入首个正式交付版本的完成条件
 | 11.1 正确性 | 完成（核心） | 随机 Undo/Redo、Document 不变式、模型闭合、5000 布局等价 |
 | 11.2 性能 | 部分 | 100k 字符/10k 段落 ignored 门禁；P95 未测 |
 | 11.3 视觉体验 | 未完成 | 依赖真实 GPUI 渲染 |
-| 11.4 发布 | 部分 | release profile；安装包/图标/签名未做 |
+| 11.4 发布 | 完成（Windows） | release profile + `dist/coti.exe`；关闭 LTO 以控制 GPUI 构建时间 |
 
 ------------------------------------------------------------------------
 
