@@ -367,7 +367,145 @@ impl Document {
         Ok(removed)
     }
 
-    /// Moves a block to a new parent/index, preserving its `BlockId`.
+    /// Splits an inline leaf at a local offset, returning the new block id.
+    ///
+    /// Paragraphs split into two paragraphs; headings split into a heading and
+    /// a following paragraph. On any failure the document is restored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a stale/non-inline block, invalid offset, or a
+    /// failed insertion.
+    pub fn split_block(&mut self, id: BlockId, offset: usize) -> DocumentResult<BlockId> {
+        let snapshot = self.snapshot();
+        let result = self.split_block_inner(id, offset);
+        if result.is_err() {
+            self.restore(snapshot);
+        }
+        result
+    }
+
+    fn split_block_inner(&mut self, id: BlockId, offset: usize) -> DocumentResult<BlockId> {
+        let kind = self.arena.get(id).ok_or_else(|| stale(id))?.kind().clone();
+        let content = kind
+            .inline_content()
+            .ok_or_else(|| DocumentError::NotALeaf {
+                index: id.index(),
+                generation: id.generation(),
+            })?;
+        let (left, right) = content
+            .split_at(offset)
+            .ok_or_else(|| DocumentError::Invariant {
+                message: format!("could not split block {id} at offset {offset}"),
+            })?;
+        let new_kind = match kind {
+            BlockKind::Paragraph(_) => BlockKind::Paragraph(right),
+            BlockKind::Heading { .. } => BlockKind::Paragraph(right),
+            _ => {
+                return Err(DocumentError::Invariant {
+                    message: format!("block {id} does not support splitting"),
+                });
+            }
+        };
+        let parent = self.parent(id);
+        let child_index =
+            self.position_of_child(parent, id)
+                .ok_or_else(|| DocumentError::Invariant {
+                    message: format!("block {id} is not linked from its parent"),
+                })?;
+
+        self.set_inline_content(id, left)?;
+        self.set_source(id, SourceHint::dirty())?;
+        self.insert_block(parent, child_index + 1, new_kind)
+    }
+
+    /// Joins two adjacent compatible inline leaves into the left block.
+    ///
+    /// The left block keeps its kind and id; the right block is removed. On any
+    /// failure the document is restored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless the blocks are adjacent siblings and both are
+    /// Paragraph/Heading leaves.
+    pub fn join_blocks(&mut self, left: BlockId, right: BlockId) -> DocumentResult<()> {
+        let snapshot = self.snapshot();
+        let result = self.join_blocks_inner(left, right);
+        if result.is_err() {
+            self.restore(snapshot);
+        }
+        result
+    }
+
+    fn join_blocks_inner(&mut self, left: BlockId, right: BlockId) -> DocumentResult<()> {
+        let left_kind = self
+            .arena
+            .get(left)
+            .ok_or_else(|| stale(left))?
+            .kind()
+            .clone();
+        let right_kind = self
+            .arena
+            .get(right)
+            .ok_or_else(|| stale(right))?
+            .kind()
+            .clone();
+        if !matches!(
+            left_kind,
+            BlockKind::Paragraph(_) | BlockKind::Heading { .. }
+        ) || !matches!(
+            right_kind,
+            BlockKind::Paragraph(_) | BlockKind::Heading { .. }
+        ) {
+            return Err(DocumentError::Invariant {
+                message: "join only supports Paragraph/Heading siblings".to_owned(),
+            });
+        }
+        if self.parent(left) != self.parent(right) {
+            return Err(DocumentError::Invariant {
+                message: "join requires the same parent".to_owned(),
+            });
+        }
+        let left_index = self
+            .position_of_child(self.parent(left), left)
+            .ok_or_else(|| DocumentError::Invariant {
+                message: format!("block {left} is not linked from its parent"),
+            })?;
+        let right_index = self
+            .position_of_child(self.parent(right), right)
+            .ok_or_else(|| DocumentError::Invariant {
+                message: format!("block {right} is not linked from its parent"),
+            })?;
+        if left_index + 1 != right_index {
+            return Err(DocumentError::Invariant {
+                message: "join requires adjacent siblings".to_owned(),
+            });
+        }
+
+        let mut content = self
+            .kind(left)
+            .and_then(BlockKind::inline_content)
+            .cloned()
+            .ok_or_else(|| DocumentError::NotALeaf {
+                index: left.index(),
+                generation: left.generation(),
+            })?;
+        let right_content = self
+            .kind(right)
+            .and_then(BlockKind::inline_content)
+            .cloned()
+            .ok_or_else(|| DocumentError::NotALeaf {
+                index: right.index(),
+                generation: right.generation(),
+            })?;
+        content.append_content(&right_content);
+        content.normalize();
+
+        self.set_inline_content(left, content)?;
+        self.set_source(left, SourceHint::dirty())?;
+        self.remove_block(right)?;
+        Ok(())
+    }
     ///
     /// # Errors
     ///
@@ -740,7 +878,7 @@ fn stale(id: BlockId) -> DocumentError {
 #[cfg(test)]
 mod tests {
     use super::Document;
-    use crate::{Align, BlockId, BlockKind, InlineContent};
+    use crate::{Align, BlockId, BlockKind, FenceStyle, InlineContent};
 
     fn paragraph(text: &str) -> BlockKind {
         BlockKind::Paragraph(InlineContent::from_text(text))
@@ -937,5 +1075,50 @@ mod tests {
             assert!(document.validate().is_ok());
         }
         assert_eq!(document.root_children().len(), 1);
+    }
+
+    #[test]
+    fn split_block_creates_adjacent_sibling() {
+        let mut document = Document::new();
+        let id = document.append_block(None, paragraph("abc")).unwrap();
+        let new_id = document.split_block(id, 1).unwrap();
+        assert_eq!(document.parent(new_id), None);
+        assert_eq!(document.kind(id).unwrap().leaf_len(), Some(1));
+        assert_eq!(document.kind(new_id).unwrap().leaf_len(), Some(2));
+        assert!(document.validate().is_ok());
+    }
+
+    #[test]
+    fn join_blocks_merges_content_and_removes_right() {
+        let mut document = Document::new();
+        let left = document.append_block(None, paragraph("a")).unwrap();
+        let right = document.append_block(None, paragraph("bc")).unwrap();
+        document.join_blocks(left, right).unwrap();
+        assert!(document.node(right).is_none());
+        assert_eq!(document.kind(left).unwrap().leaf_len(), Some(3));
+        assert!(document.validate().is_ok());
+    }
+
+    #[test]
+    fn split_and_join_reject_incompatible_blocks() {
+        let mut document = Document::new();
+        let id = document.root_children()[0];
+        document
+            .set_block_kind(
+                id,
+                BlockKind::CodeBlock {
+                    lang: None,
+                    text: "x".into(),
+                    fence: FenceStyle::BACKTICK,
+                },
+            )
+            .unwrap();
+        assert!(document.split_block(id, 0).is_err());
+
+        let a = document.append_block(None, paragraph("a")).unwrap();
+        let b = document.append_block(None, paragraph("b")).unwrap();
+        let c = document.append_block(None, paragraph("c")).unwrap();
+        assert!(document.join_blocks(a, c).is_err());
+        assert!(document.node(b).is_some());
     }
 }

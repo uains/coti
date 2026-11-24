@@ -63,6 +63,20 @@ pub enum Operation {
         /// New kind.
         kind: BlockKind,
     },
+    /// Splits an inline leaf at a local offset.
+    SplitBlock {
+        /// Source block.
+        id: BlockId,
+        /// Local split offset.
+        offset: usize,
+    },
+    /// Joins two adjacent inline leaves.
+    JoinBlocks {
+        /// Left block.
+        left: BlockId,
+        /// Right block.
+        right: BlockId,
+    },
 }
 
 /// Result of applying an operation.
@@ -172,6 +186,30 @@ impl Operation {
                 Ok(AppliedOperation {
                     inverse: Self::SetBlockKind { id: *id, kind: old },
                     affected: vec![*id],
+                })
+            }
+            Self::SplitBlock { id, offset } => {
+                let new_id = document.split_block(*id, *offset)?;
+                Ok(AppliedOperation {
+                    inverse: Self::JoinBlocks {
+                        left: *id,
+                        right: new_id,
+                    },
+                    affected: vec![*id, new_id],
+                })
+            }
+            Self::JoinBlocks { left, right } => {
+                let left_len = document
+                    .kind(*left)
+                    .and_then(BlockKind::leaf_len)
+                    .ok_or_else(|| stale(*left))?;
+                document.join_blocks(*left, *right)?;
+                Ok(AppliedOperation {
+                    inverse: Self::SplitBlock {
+                        id: *left,
+                        offset: left_len,
+                    },
+                    affected: vec![*left, *right],
                 })
             }
         }
@@ -431,5 +469,30 @@ mod tests {
             content: InlineContent::new(),
         };
         assert!(operation.apply(&mut document).is_err());
+    }
+
+    #[test]
+    fn split_block_inverse_joins_again() {
+        let mut document = Document::new();
+        let id = document.append_block(None, paragraph("abc")).unwrap();
+        let applied = Operation::SplitBlock { id, offset: 1 }
+            .apply(&mut document)
+            .unwrap();
+        assert_eq!(document.root_children().len(), 3);
+        applied.inverse.apply(&mut document).unwrap();
+        assert_eq!(document.kind(id).unwrap().leaf_len(), Some(3));
+    }
+
+    #[test]
+    fn join_blocks_inverse_splits_at_left_length() {
+        let mut document = Document::new();
+        let left = document.append_block(None, paragraph("a")).unwrap();
+        let right = document.append_block(None, paragraph("bc")).unwrap();
+        let applied = Operation::JoinBlocks { left, right }
+            .apply(&mut document)
+            .unwrap();
+        assert!(document.node(right).is_none());
+        applied.inverse.apply(&mut document).unwrap();
+        assert_eq!(document.kind(left).unwrap().leaf_len(), Some(1));
     }
 }

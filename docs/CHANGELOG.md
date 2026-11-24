@@ -990,3 +990,12 @@
 - 折叠光标删除后一个 grapheme/atom；非折叠 Range 删除整个范围。
 - 跨块删除仍明确拒绝。
 - `md-editor` 50 个测试；全 Workspace 199 个测试通过。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第四批）：SplitBlock / JoinBlocks
+
+- `Document` 新增 `split_block`、`join_blocks`，内部快照回滚。
+- Paragraph 分裂为两个 Paragraph；Heading 分裂为 Heading + Paragraph。
+- Join 合并 Inline 内容、保留左块 ID/kind，删除右块。
+- `Operation` 新增 `SplitBlock`、`JoinBlocks` 及 inverse。
+- `md-editor` 52 个测试；全 Workspace 204 个测试通过。
+- 下一步：DeleteRange 跨块删除、Tab/List/Quote/Table 规则。

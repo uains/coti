@@ -453,7 +453,7 @@ impl InlineContent {
         if !text.is_empty() {
             left.push_run(Run::text(text, marks))?;
         }
-        left.append_content(right);
+        left.append_content(&right);
         left.normalize();
         *self = left;
         Ok(())
@@ -463,8 +463,9 @@ impl InlineContent {
         self.runs.push(run.clone());
     }
 
-    fn append_content(&mut self, other: Self) {
-        self.runs.extend(other.runs);
+    /// Appends another content's runs, preserving marks and order.
+    pub fn append_content(&mut self, other: &Self) {
+        self.runs.extend(other.runs.iter().cloned());
         self.len += other.len;
     }
 
