@@ -6,9 +6,10 @@ use md_document::{
     Selection, SelectionKind, SelectionSet,
 };
 
+use crate::history::{GroupKind, History, HistoryEntry, HistoryGroup};
 use crate::intent::MoveDirection;
 use crate::rule::{self, RuleId};
-use crate::{EditorError, EditorResult, Intent, Operation, Transaction};
+use crate::{ChangeSet, EditorError, EditorResult, Intent, Operation, Transaction};
 
 /// Editor configuration that affects headless behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +41,9 @@ pub struct Editor {
     pending_marks: Option<Marks>,
     document_revision: u64,
     state_revision: u64,
+    history: History,
+    pending_change: Option<ChangeSet>,
+    last_copied: String,
 }
 
 impl Editor {
@@ -55,6 +59,9 @@ impl Editor {
             pending_marks: None,
             document_revision: 0,
             state_revision: 0,
+            history: History::default(),
+            pending_change: None,
+            last_copied: String::new(),
         }
     }
 
@@ -73,7 +80,244 @@ impl Editor {
             pending_marks: None,
             document_revision: 0,
             state_revision: 0,
+            history: History::default(),
+            pending_change: None,
+            last_copied: String::new(),
         })
+    }
+
+    /// Creates an editor with a specific history configuration.
+    #[must_use]
+    pub fn with_history(document: Document, history: History) -> Self {
+        let mut editor = Self::new(document);
+        editor.history = history;
+        editor
+    }
+
+    /// Returns the history.
+    #[must_use]
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    /// Returns whether undo is available.
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        self.history.can_undo()
+    }
+
+    /// Returns whether redo is available.
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        self.history.can_redo()
+    }
+
+    /// Marks the current state as saved.
+    pub fn mark_saved(&mut self) {
+        self.history.mark_saved();
+    }
+
+    /// Returns whether the document is modified relative to the save point.
+    #[must_use]
+    pub fn is_modified(&self) -> bool {
+        self.history.is_modified()
+    }
+
+    /// Undoes the latest change.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the inverse fails.
+    pub fn undo(&mut self) -> EditorResult<bool> {
+        let mut history = std::mem::take(&mut self.history);
+        let result = history.undo(self);
+        self.history = history;
+        result
+    }
+
+    /// Redoes the latest undone change.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying the forward operations fails.
+    pub fn redo(&mut self) -> EditorResult<bool> {
+        let mut history = std::mem::take(&mut self.history);
+        let result = history.redo(self);
+        self.history = history;
+        result
+    }
+
+    /// Sets the IME marked text.
+    pub fn ime_set_marked(&mut self, text: &str) {
+        self.composition = Some(Composition {
+            text: text.to_owned(),
+        });
+        self.state_revision += 1;
+    }
+
+    /// Cancels the IME composition.
+    pub fn ime_cancel(&mut self) {
+        self.composition = None;
+        self.state_revision += 1;
+    }
+
+    /// Commits the IME composition as one history entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when inserting the committed text fails.
+    pub fn ime_commit(&mut self, text: &str) -> EditorResult<()> {
+        let committed = if text.is_empty() {
+            self.composition
+                .take()
+                .map_or_else(String::new, |composition| composition.text)
+        } else {
+            self.composition = None;
+            text.to_owned()
+        };
+        if committed.is_empty() {
+            return Ok(());
+        }
+        self.insert_text(&committed)
+    }
+
+    pub(crate) fn apply_history_operations(
+        &mut self,
+        operations: Vec<Operation>,
+    ) -> EditorResult<()> {
+        let mut transaction = Transaction::new(self.document_revision());
+        for operation in operations {
+            transaction.push(operation);
+        }
+        transaction.apply(self)?;
+        Ok(())
+    }
+
+    pub(crate) fn commit(&mut self, transaction: Transaction) -> EditorResult<ChangeSet> {
+        let changes = transaction.apply(self)?;
+        if let Some(existing) = self.pending_change.as_mut() {
+            existing.forward.extend(changes.forward);
+            existing.inverses.extend(changes.inverses);
+            for id in changes.affected {
+                if !existing.affected.contains(&id) {
+                    existing.affected.push(id);
+                }
+            }
+            existing.new_revision = changes.new_revision;
+            return Ok(existing.clone());
+        }
+        self.pending_change = Some(changes.clone());
+        Ok(changes)
+    }
+
+    /// Returns the last plain-text copy payload.
+    #[must_use]
+    pub fn copied_text(&self) -> &str {
+        &self.last_copied
+    }
+
+    /// Returns the plain-text projection of the primary selection.
+    #[must_use]
+    pub fn copy_text(&self) -> String {
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return String::new();
+        };
+        if !matches!(selection.kind, SelectionKind::Range) || selection.is_collapsed() {
+            return String::new();
+        }
+        let index = self.document.index();
+        let Ok(start) =
+            index.resolve_position(&self.document, selection.start(), Affinity::Downstream)
+        else {
+            return String::new();
+        };
+        let Ok(end) = index.resolve_position(&self.document, selection.end(), Affinity::Upstream)
+        else {
+            return String::new();
+        };
+        if start.block_id == end.block_id {
+            return self.block_text_range(start.block_id, start.offset, end.offset);
+        }
+        let Some(start_leaf) = index.leaf_index(start.block_id) else {
+            return String::new();
+        };
+        let Some(end_leaf) = index.leaf_index(end.block_id) else {
+            return String::new();
+        };
+        let leaves = index.leaf_order().to_vec();
+        let mut parts = Vec::new();
+        for (leaf_index, leaf) in leaves
+            .iter()
+            .enumerate()
+            .take(end_leaf + 1)
+            .skip(start_leaf)
+        {
+            let leaf = *leaf;
+            let from = if leaf_index == start_leaf {
+                start.offset
+            } else {
+                0
+            };
+            let to = if leaf_index == end_leaf {
+                end.offset
+            } else {
+                self.document
+                    .kind(leaf)
+                    .and_then(BlockKind::leaf_len)
+                    .unwrap_or(0)
+            };
+            parts.push(self.block_text_range(leaf, from, to));
+        }
+        parts.join("\n")
+    }
+
+    fn block_text_range(&self, block: md_document::BlockId, start: usize, end: usize) -> String {
+        let Some(kind) = self.document.kind(block) else {
+            return String::new();
+        };
+        if let Some(content) = kind.inline_content() {
+            let Some((_, right)) = content.split_at(start) else {
+                return String::new();
+            };
+            let Some((middle, _)) = right.split_at(end.saturating_sub(start)) else {
+                return String::new();
+            };
+            return middle.plain_text();
+        }
+        if let BlockKind::CodeBlock { text, .. } = kind {
+            return text.as_str().get(start..end).unwrap_or_default().to_owned();
+        }
+        String::new()
+    }
+
+    /// Pastes plain text, splitting blank lines into paragraphs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the selection or insertion fails.
+    pub fn paste_text(&mut self, text: &str) -> EditorResult<()> {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        if normalized.is_empty() {
+            return Ok(());
+        }
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return Err(EditorError::InvalidIntent {
+                message: "paste requires a selection".to_owned(),
+            });
+        };
+        if !selection.is_collapsed() {
+            self.delete_range(selection.start(), selection.end())?;
+        }
+        for (index, chunk) in normalized.split("\n\n").enumerate() {
+            if index > 0 {
+                self.insert_newline()?;
+            }
+            let chunk = chunk.trim_end_matches('\n');
+            if !chunk.is_empty() {
+                self.insert_text(chunk)?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the document.
@@ -149,10 +393,106 @@ impl Editor {
     ///
     /// Returns an error when no rule matches or the operation fails.
     pub fn dispatch(&mut self, intent: Intent) -> EditorResult<RuleId> {
-        let rule_id =
-            rule::match_rule(self, &intent).ok_or_else(|| EditorError::InvalidIntent {
-                message: format!("no rule matched {}", intent.name()),
-            })?;
+        let before_selection = self.selection.clone();
+        let before_revision = self.document_revision();
+        self.pending_change = None;
+        let rule_id = self.dispatch_inner(&intent)?;
+        self.record_history(before_selection, before_revision, &intent);
+        Ok(rule_id)
+    }
+
+    fn record_history(
+        &mut self,
+        before_selection: SelectionSet,
+        before_revision: u64,
+        intent: &Intent,
+    ) {
+        let Some(change) = self.pending_change.take() else {
+            return;
+        };
+        if change.new_revision == before_revision {
+            return;
+        }
+        let group = if matches!(intent, Intent::InsertText(_))
+            && change.affected.len() == 1
+            && self
+                .selection
+                .primary_selection()
+                .is_some_and(|selection| selection.is_collapsed())
+        {
+            Some(HistoryGroup {
+                kind: GroupKind::TextInsert,
+                block_id: change.affected[0],
+            })
+        } else {
+            None
+        };
+        let before_state = self.history.current_state();
+        let entry = HistoryEntry::from_change(
+            change,
+            before_selection,
+            self.selection.clone(),
+            group,
+            before_state,
+            before_state + 1,
+        );
+        self.history.push(entry);
+    }
+
+    fn dispatch_inner(&mut self, intent: &Intent) -> EditorResult<RuleId> {
+        let rule_id = rule::match_rule(self, intent).ok_or_else(|| EditorError::InvalidIntent {
+            message: format!("no rule matched {}", intent.name()),
+        })?;
+
+        if rule_id == RuleId::UNDO {
+            self.undo()?;
+            return Ok(rule_id);
+        }
+
+        if rule_id == RuleId::REDO {
+            self.redo()?;
+            return Ok(rule_id);
+        }
+
+        if rule_id == RuleId::IME_SET_MARKED {
+            let Intent::ImeSetMarked(text) = intent else {
+                return Err(EditorError::InvalidIntent {
+                    message: "IME marked rule requires ImeSetMarked".to_owned(),
+                });
+            };
+            self.ime_set_marked(text);
+            return Ok(rule_id);
+        }
+
+        if rule_id == RuleId::IME_COMMIT {
+            let Intent::ImeCommit(text) = intent else {
+                return Err(EditorError::InvalidIntent {
+                    message: "IME commit rule requires ImeCommit".to_owned(),
+                });
+            };
+            self.ime_commit(text)?;
+            return Ok(rule_id);
+        }
+
+        if rule_id == RuleId::IME_CANCEL {
+            self.ime_cancel();
+            return Ok(rule_id);
+        }
+
+        if rule_id == RuleId::COPY {
+            self.last_copied = self.copy_text();
+            return Ok(rule_id);
+        }
+
+        if rule_id == RuleId::PASTE {
+            let Intent::Paste(text) = intent else {
+                return Err(EditorError::InvalidIntent {
+                    message: "paste rule requires Paste".to_owned(),
+                });
+            };
+            self.paste_text(text)?;
+            return Ok(rule_id);
+        }
 
         if rule_id == RuleId::INSERT_TEXT {
             let Intent::InsertText(text) = intent else {
@@ -160,7 +500,7 @@ impl Editor {
                     message: "insert rule requires InsertText".to_owned(),
                 });
             };
-            self.insert_text(&text)?;
+            self.insert_text(text)?;
             return Ok(rule_id);
         }
 
@@ -185,7 +525,7 @@ impl Editor {
                     message: "indent rule requires ChangeIndent".to_owned(),
                 });
             };
-            self.change_indent(outdent)?;
+            self.change_indent(*outdent)?;
             return Ok(rule_id);
         }
 
@@ -199,7 +539,7 @@ impl Editor {
                     message: format!("rule {rule_id} requires a Move intent"),
                 });
             };
-            self.apply_move(direction, extend)?;
+            self.apply_move(*direction, *extend)?;
             return Ok(rule_id);
         }
 
@@ -275,7 +615,7 @@ impl Editor {
             };
             let mut transaction = Transaction::new(self.document_revision());
             transaction.push(operation);
-            transaction.apply(self)?;
+            self.commit(transaction)?;
 
             let index = self.document.index();
             let leaf = index
@@ -343,7 +683,7 @@ impl Editor {
             },
             marks: Marks::plain(),
         });
-        transaction.apply(self)?;
+        self.commit(transaction)?;
 
         let new_pos = DocPos::new(new_pos);
         self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
@@ -367,7 +707,7 @@ impl Editor {
             };
             let mut transaction = Transaction::new(self.document_revision());
             transaction.push(operation);
-            transaction.apply(self)?;
+            self.commit(transaction)?;
             self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
             self.pending_marks = None;
             self.state_revision += 1;
@@ -438,7 +778,7 @@ impl Editor {
             left: start.block_id,
             right: end.block_id,
         });
-        transaction.apply(self)?;
+        self.commit(transaction)?;
 
         self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
         self.pending_marks = None;
@@ -481,7 +821,7 @@ impl Editor {
         };
         let mut transaction = Transaction::new(self.document_revision());
         transaction.push(operation);
-        transaction.apply(self)?;
+        self.commit(transaction)?;
 
         self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
         self.pending_marks = None;
@@ -518,7 +858,7 @@ impl Editor {
             content.insert_atom_at(resolved.offset, AtomKind::HardBreak, Marks::plain())?;
             let mut transaction = Transaction::new(self.document_revision());
             transaction.push(Operation::SetInlineContent { block_id, content });
-            transaction.apply(self)?;
+            self.commit(transaction)?;
             let new_pos = DocPos::new(selection.head.pos.get() + 1);
             self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
             self.pending_marks = None;
@@ -567,7 +907,7 @@ impl Editor {
             index: child_index + 1,
             kind: BlockKind::Paragraph(right),
         });
-        transaction.apply(self)?;
+        self.commit(transaction)?;
 
         let new_id = match parent {
             Some(parent_id) => self.document.children(parent_id).unwrap()[child_index + 1],
@@ -613,12 +953,56 @@ impl Editor {
         };
         let mut transaction = Transaction::new(self.document_revision());
         transaction.push(operation);
-        transaction.apply(self)?;
+        self.commit(transaction)?;
 
         let new_pos = DocPos::new(selection.start().get() + text.len());
         self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
         self.pending_marks = None;
         self.state_revision += 1;
+        self.try_heading_input_rule()?;
+        Ok(())
+    }
+
+    fn try_heading_input_rule(&mut self) -> EditorResult<()> {
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return Ok(());
+        };
+        if !selection.is_collapsed() {
+            return Ok(());
+        }
+        let index = self.document.index();
+        let resolved =
+            index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+        let Some(BlockKind::Paragraph(content)) = self.document.kind(resolved.block_id).cloned()
+        else {
+            return Ok(());
+        };
+        let text = content.plain_text();
+        let level = text
+            .chars()
+            .take_while(|character| *character == '#')
+            .count();
+        if !(1..=6).contains(&level) || text.as_bytes().get(level) != Some(&b' ') {
+            return Ok(());
+        }
+        let prefix = level + 1;
+        if resolved.offset < prefix {
+            return Ok(());
+        }
+        let Some((_, heading_content)) = content.split_at(prefix) else {
+            return Ok(());
+        };
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::SetBlockKind {
+            id: resolved.block_id,
+            kind: BlockKind::Heading {
+                level: level as u8,
+                content: heading_content,
+            },
+        });
+        self.commit(transaction)?;
+        let new_pos = DocPos::new(selection.head.pos.get() - prefix);
+        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
         Ok(())
     }
 
@@ -685,7 +1069,7 @@ impl Editor {
                 transaction.push(Operation::OutdentQuoteBlock {
                     id: resolved.block_id,
                 });
-                transaction.apply(self)?;
+                self.commit(transaction)?;
 
                 let index = self.document.index();
                 let leaf = index
@@ -735,7 +1119,7 @@ impl Editor {
         };
         let mut transaction = Transaction::new(self.document_revision());
         transaction.push(operation);
-        transaction.apply(self)?;
+        self.commit(transaction)?;
 
         self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
         self.pending_marks = None;
@@ -803,7 +1187,7 @@ impl Editor {
     fn append_table_row_and_select(&mut self, table: md_document::BlockId) -> EditorResult<()> {
         let mut transaction = Transaction::new(self.document_revision());
         transaction.push(Operation::AppendTableRow { table });
-        transaction.apply(self)?;
+        self.commit(transaction)?;
 
         let rows = self
             .document
@@ -1132,7 +1516,7 @@ mod tests {
     fn unsupported_intent_is_rejected() {
         let mut editor = editor_at(0);
         assert!(matches!(
-            editor.dispatch(Intent::Paste("x".to_owned())),
+            editor.dispatch(Intent::ToggleList { ordered: false }),
             Err(crate::EditorError::InvalidIntent { .. })
         ));
     }
@@ -1552,5 +1936,97 @@ mod tests {
         editor.dispatch(Intent::DeleteBackward).unwrap();
         assert!(editor.document().node(quote).is_some());
         assert_eq!(editor.document().children(quote).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn ime_commit_is_one_undoable_entry() {
+        let mut editor = Editor::new(Document::new());
+        editor
+            .dispatch(Intent::ImeSetMarked("你".to_owned()))
+            .unwrap();
+        assert_eq!(editor.composition().unwrap().text, "你");
+        editor.dispatch(Intent::ImeCommit("你".to_owned())).unwrap();
+        assert!(editor.composition().is_none());
+        assert_eq!(editor.document().index().doc_length(), "你".len());
+        assert_eq!(editor.history().undo_len(), 1);
+        editor.undo().unwrap();
+        assert_eq!(editor.document().index().doc_length(), 0);
+    }
+
+    #[test]
+    fn ime_commit_with_empty_text_uses_marked_text() {
+        let mut editor = Editor::new(Document::new());
+        editor
+            .dispatch(Intent::ImeSetMarked("ab".to_owned()))
+            .unwrap();
+        editor.dispatch(Intent::ImeCommit(String::new())).unwrap();
+        assert_eq!(editor.document().index().doc_length(), 2);
+    }
+
+    #[test]
+    fn ime_cancel_clears_composition() {
+        let mut editor = Editor::new(Document::new());
+        editor
+            .dispatch(Intent::ImeSetMarked("x".to_owned()))
+            .unwrap();
+        editor.dispatch(Intent::ImeCancel).unwrap();
+        assert!(editor.composition().is_none());
+        assert_eq!(editor.document_revision(), 0);
+    }
+
+    #[test]
+    fn copy_text_within_one_block() {
+        let mut document = Document::new();
+        let block = document.root_children()[0];
+        document
+            .set_inline_content(block, InlineContent::from_text("abc"))
+            .unwrap();
+        let selection = SelectionSet::new(Selection::range(
+            Anchor::new(DocPos::new(1), Affinity::Upstream),
+            Anchor::new(DocPos::new(3), Affinity::Upstream),
+        ));
+        let editor = Editor::with_selection(document, selection).unwrap();
+        assert_eq!(editor.copy_text(), "bc");
+    }
+
+    #[test]
+    fn copy_text_across_blocks_joins_with_newline() {
+        let mut document = Document::new();
+        document
+            .set_inline_content(document.root_children()[0], InlineContent::from_text("ab"))
+            .unwrap();
+        document
+            .append_block(None, BlockKind::Paragraph(InlineContent::from_text("cd")))
+            .unwrap();
+        let selection = SelectionSet::new(Selection::range(
+            Anchor::new(DocPos::new(1), Affinity::Upstream),
+            Anchor::new(DocPos::new(4), Affinity::Upstream),
+        ));
+        let editor = Editor::with_selection(document, selection).unwrap();
+        assert_eq!(editor.copy_text(), "b\nc");
+    }
+
+    #[test]
+    fn paste_splits_blank_lines_and_undoes_once() {
+        let mut editor = Editor::new(Document::new());
+        editor.dispatch(Intent::Paste("a\n\nb".to_owned())).unwrap();
+        assert_eq!(editor.document().root_children().len(), 2);
+        assert_eq!(editor.history().undo_len(), 1);
+        editor.undo().unwrap();
+        assert_eq!(editor.document().index().doc_length(), 0);
+    }
+
+    #[test]
+    fn hash_space_input_rule_creates_heading() {
+        let mut editor = Editor::new(Document::new());
+        editor.dispatch(Intent::InsertText("#".to_owned())).unwrap();
+        editor.dispatch(Intent::InsertText(" ".to_owned())).unwrap();
+        let block = editor.document().root_children()[0];
+        assert!(matches!(
+            editor.document().kind(block),
+            Some(BlockKind::Heading { level: 1, .. })
+        ));
+        editor.undo().unwrap();
+        assert_eq!(editor.document().index().doc_length(), 0);
     }
 }

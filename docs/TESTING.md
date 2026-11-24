@@ -40,7 +40,7 @@ cargo bench
 | `md-core` | 32 unit + 7 property | 文本偏移/范围、UTF-8 边界、grapheme、UTF-16、修改原子性、几何、属性往返 |
 | `md-document` | 70 unit + 6 property | Inline、Block、Arena、Document、DocumentIndex、DocPos/Position、Selection、Validator |
 | `md-markdown` | 10 unit + 4 integration | 解析器、Serializer、200 篇夹具逐字节保真/重解析/稳定性 |
-| `md-editor` | 74 unit + 4 property | Intent、Editor、Move/Insert/Delete 规则、Operation/inverse、Transaction、PositionMapping |
+| `md-editor` | 89 unit + 4 property | Intent、Editor、规则、Operation/inverse、Transaction、PositionMapping、History、IME、Clipboard |
 | `md-layout` | 3 | 几何错误、缺失块布局、文档错误转发 |
 | `md-render` | 2 | 资源错误、布局错误转发 |
 | `md-app` | 2 unit + 2 integration | 日志初始化幂等、入口返回、跨层 source 链、真实二进制启动 |
@@ -107,6 +107,6 @@ cargo bench
 - 5.1 已完成：Move 规则、grapheme/Atom/跨叶光标。
 - 5.2～5.3 已完成：Operation/inverse、Transaction 快照回滚、ChangeSet。
 - 5.4～5.5 第一批已完成：PositionMapping、InsertText/DeleteBackward 规则。
-- 当前 `md-editor` 74 个单元测试 + 4 个属性测试；总计 230 个测试通过。
+- 当前 `md-editor` 89 个单元测试 + 4 个属性测试；总计 245 个测试通过。
 - Enter/DeleteForward/DeleteRange/Tab/List/Quote/Table 规则尚未完成；当前不对阶段 5 做整体验收。
 

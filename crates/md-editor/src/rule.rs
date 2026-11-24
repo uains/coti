@@ -28,6 +28,20 @@ impl RuleId {
     pub const DELETE_FORWARD: Self = Self(0x0204);
     /// Indent or outdent the current context.
     pub const CHANGE_INDENT: Self = Self(0x0205);
+    /// Undo the latest history entry.
+    pub const UNDO: Self = Self(0x0301);
+    /// Redo the latest undone entry.
+    pub const REDO: Self = Self(0x0302);
+    /// Update IME marked text.
+    pub const IME_SET_MARKED: Self = Self(0x0401);
+    /// Commit IME composition.
+    pub const IME_COMMIT: Self = Self(0x0402);
+    /// Cancel IME composition.
+    pub const IME_CANCEL: Self = Self(0x0403);
+    /// Copy the selection.
+    pub const COPY: Self = Self(0x0501);
+    /// Paste text.
+    pub const PASTE: Self = Self(0x0502);
 
     /// Returns the numeric id.
     #[must_use]
@@ -128,6 +142,34 @@ fn change_indent(ctx: &Ctx<'_>) -> bool {
     matches!(ctx.intent, Intent::ChangeIndent { .. })
 }
 
+fn undo(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::Undo)
+}
+
+fn redo(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::Redo)
+}
+
+fn ime_set_marked(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::ImeSetMarked(_))
+}
+
+fn ime_commit(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::ImeCommit(_))
+}
+
+fn ime_cancel(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::ImeCancel)
+}
+
+fn copy(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::Copy)
+}
+
+fn paste(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::Paste(_))
+}
+
 static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::MOVE_LEFT,
@@ -164,6 +206,34 @@ static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::CHANGE_INDENT,
         guard: change_indent,
+    },
+    Rule {
+        id: RuleId::UNDO,
+        guard: undo,
+    },
+    Rule {
+        id: RuleId::REDO,
+        guard: redo,
+    },
+    Rule {
+        id: RuleId::IME_SET_MARKED,
+        guard: ime_set_marked,
+    },
+    Rule {
+        id: RuleId::IME_COMMIT,
+        guard: ime_commit,
+    },
+    Rule {
+        id: RuleId::IME_CANCEL,
+        guard: ime_cancel,
+    },
+    Rule {
+        id: RuleId::COPY,
+        guard: copy,
+    },
+    Rule {
+        id: RuleId::PASTE,
+        guard: paste,
     },
 ];
 
@@ -203,6 +273,9 @@ mod tests {
     #[test]
     fn unsupported_intent_has_no_rule() {
         let editor = Editor::new(Document::new());
-        assert_eq!(match_rule(&editor, &Intent::Paste("x".to_owned())), None);
+        assert_eq!(
+            match_rule(&editor, &Intent::ToggleList { ordered: false }),
+            None
+        );
     }
 }

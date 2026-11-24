@@ -1072,3 +1072,26 @@
 - 已实现规则：Move、InsertText、DeleteBackward/Forward、Enter、DeleteRange、ChangeIndent（代码块/列表/表格）、TableCell 导航与追加行、Quote Backspace。
 - 已知缺口：完整 DESIGN §8 规则表、Node/TableCells 删除、Split/Join PositionMapping、History（阶段 6）、根级 ListItem 退出列表。
 - 阶段 5 按“核心范围”验收；完整规则覆盖作为后续增量。
+
+## 2026-11-24 · 阶段 6：History / IME / 剪贴板 / 标题 InputRule
+
+- **History**：
+  - `HistoryEntry` 保存 forward/inverse、前后 Selection、group、revision、时间戳、字节估算、逻辑 state id。
+  - Undo/Redo Stack；`Unknown` → `Intent::Undo/Redo` 规则。
+  - 连续 InsertText 500ms 合并；Save Point 阻止跨保存点合并。
+  - max_entries / max_bytes 淘汰；`save_point`、`is_modified`、`can_undo/redo`。
+  - 10 步 undo/redo、Selection 恢复、Redo 清理、限额测试。
+- **IME**：
+  - `ImeSetMarked`、`ImeCommit`、`ImeCancel`。
+  - Composition 状态；Commit 作为一条历史记录；一次 Undo 完整撤销。
+- **剪贴板**：
+  - `copy_text` 同块与跨块纯文本复制（换行连接）。
+  - `paste_text` 按空行拆分为段落，整体合并为一条历史记录。
+- **InputRule**：
+  - `# `～`###### ` 在 Paragraph 起始处转换为对应 Heading，单次 Undo 回退。
+- `md-editor` 89 个单元测试 + 4 个属性测试；全 Workspace 245 个测试通过。
+
+## 2026-11-24 · 阶段 6 汇总：输入核心完成
+
+- 阶段 6 按核心范围验收：History、IME Commit/Cancel、纯文本剪贴板、Heading InputRule。
+- 已知增量：Markdown/HTML 剪贴板、List/Quote/CodeBlock InputRule、跨块 Composition、IME marked range 高亮、真实输入法集成测试。

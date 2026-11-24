@@ -5,6 +5,7 @@
 
 mod editor;
 mod error;
+mod history;
 mod intent;
 mod mapping;
 mod operation;
@@ -13,6 +14,7 @@ mod transaction;
 
 pub use editor::{Composition, Editor, EditorConfig};
 pub use error::{EditorError, EditorResult};
+pub use history::{GroupKind, History, HistoryConfig, HistoryEntry, HistoryGroup};
 pub use intent::{BlockStyle, Intent, MoveDirection};
 pub use mapping::{MappedPosition, MappingOp, PositionMapping};
 pub use operation::{AppliedOperation, Operation};

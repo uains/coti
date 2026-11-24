@@ -552,6 +552,32 @@ impl InlineContent {
         self.len += 1;
     }
 
+    /// Returns the plain-text projection used by clipboard copy.
+    #[must_use]
+    pub fn plain_text(&self) -> String {
+        let mut output = String::new();
+        for run in &self.runs {
+            match run {
+                Run::Text { text, .. } => output.push_str(text.as_str()),
+                Run::Atom { kind, .. } => match kind {
+                    AtomKind::HardBreak | AtomKind::SoftBreak => output.push('\n'),
+                    AtomKind::Image(_) => output.push_str("[image]"),
+                    AtomKind::InlineMath(source) => {
+                        output.push('$');
+                        output.push_str(source.as_str());
+                        output.push('$');
+                    }
+                    AtomKind::FootnoteRef(label) => {
+                        output.push_str("[^");
+                        output.push_str(label);
+                        output.push(']');
+                    }
+                },
+            }
+        }
+        output
+    }
+
     /// Inserts an atom at `index`.
     ///
     /// # Errors

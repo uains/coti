@@ -550,7 +550,7 @@ Headless，不依赖 GPUI。
 -   随机 Intent 全部 Undo 后恢复原文档和选区。
 -   每个 RuleId 至少三个测试用例。
 
-### 阶段 6：History、IME、剪贴板与 InputRules
+### 阶段 6：History、IME、剪贴板与 InputRules（已完成，核心范围）
 
 **目标：**
 让编辑内核具备可靠的真实文本输入能力，重点保障中文输入法和撤销语义。
@@ -614,6 +614,13 @@ HTML 粘贴属于后续扩展，不列入首个正式交付版本的完成条件
 -   连续输入 Undo 合并。
 -   IME Commit 一次 Undo 完整撤销。
 -   多格式复制粘贴正确。
+
+| 步骤 | 状态 | 产物 |
+|---|---|---|
+| 6.1 History | 完成（核心） | HistoryEntry、Undo/Redo、合并、Save Point、限额 |
+| 6.2 IME | 完成（核心） | SetMarked / Commit / Cancel，Commit 单条历史 |
+| 6.3 剪贴板 | 完成（纯文本） | copy_text、paste_text、空行分段 |
+| 6.4 InputRules | 部分 | `# ` 标题规则 |
 
 ### 阶段 7：`md-layout` 布局引擎
 
@@ -1463,8 +1470,8 @@ docs/
 
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets -- -D warnings`：通过。
-- `cargo test --workspace`：230 个测试通过。
-  - `md-editor` 74 个单元测试 + 4 个属性测试。
+- `cargo test --workspace`：245 个测试通过。
+  - `md-editor` 89 个单元测试 + 4 个属性测试。
 - Move 规则覆盖：每条 RuleId 3 个以上用例；grapheme、CJK、Atom、跨叶、DocStart/DocEnd、扩展选区。
 - Operation/Transaction 测试覆盖 inverse、成功提交、空事务、陈旧 revision、操作失败/validate 失败回滚。
 

@@ -57,12 +57,14 @@ impl Transaction {
             return Ok(ChangeSet {
                 base_revision: self.base_revision,
                 new_revision: self.base_revision,
-                affected: Vec::new(),
+                forward: Vec::new(),
                 inverses: Vec::new(),
+                affected: Vec::new(),
             });
         }
 
         let snapshot = editor.document().snapshot();
+        let forward = self.operations.clone();
         let mut inverses = Vec::with_capacity(self.operations.len());
         let mut affected = Vec::new();
 
@@ -92,6 +94,7 @@ impl Transaction {
         Ok(ChangeSet {
             base_revision: self.base_revision,
             new_revision: editor.document_revision(),
+            forward,
             affected,
             inverses,
         })
@@ -105,6 +108,8 @@ pub struct ChangeSet {
     pub base_revision: u64,
     /// Document revision after commit.
     pub new_revision: u64,
+    /// Forward operations in apply order.
+    pub forward: Vec<Operation>,
     /// Distinct affected block ids.
     pub affected: Vec<BlockId>,
     /// Inverses in forward apply order; undo should apply them in reverse.

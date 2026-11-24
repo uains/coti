@@ -62,6 +62,8 @@ pub enum Intent {
     },
     /// Paste plain text or Markdown.
     Paste(String),
+    /// Copy the current selection as plain text.
+    Copy,
     /// Undo the last history entry.
     Undo,
     /// Redo the last undone entry.
@@ -89,6 +91,7 @@ impl Intent {
             Self::ToggleList { .. } => "toggle_list",
             Self::ChangeIndent { .. } => "change_indent",
             Self::Paste(_) => "paste",
+            Self::Copy => "copy",
             Self::Undo => "undo",
             Self::Redo => "redo",
             Self::ImeSetMarked(_) => "ime_set_marked",
