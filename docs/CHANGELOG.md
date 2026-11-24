@@ -1027,3 +1027,10 @@
 - Tab 规则识别 ListItem 并使用 Transaction；CodeBlock 行为保留。
 - 首项 Indent 为明确 no-op。
 - `md-editor` 59 个测试；全 Workspace 211 个测试通过。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第八批）：TableCell Tab 导航
+
+- Tab/Shift+Tab 识别 TableCells 选择与 TableCell 内的文本光标。
+- 下一格 / 上一格；跨行移动到下一行首格/上一行末格。
+- 末格 Tab、首格 Shift+Tab 为 no-op；追加新行尚未实现。
+- `md-editor` 62 个测试；全 Workspace 214 个测试通过。

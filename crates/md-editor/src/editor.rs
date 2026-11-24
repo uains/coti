@@ -2,7 +2,7 @@
 
 use md_core::{TextOffset, TextRange};
 use md_document::{
-    Affinity, Anchor, BlockKind, DocPos, Document, DocumentSnapshot, Marks, Selection,
+    Affinity, Anchor, BlockKind, CellPos, DocPos, Document, DocumentSnapshot, Marks, Selection,
     SelectionKind, SelectionSet,
 };
 
@@ -214,6 +214,24 @@ impl Editor {
                 message: "indent requires a selection".to_owned(),
             });
         };
+        if let SelectionKind::TableCells { table, start, .. } = selection.kind {
+            let Some(BlockKind::Table { aligns, rows }) = self.document.kind(table) else {
+                return Ok(());
+            };
+            let columns = aligns.len();
+            if outdent {
+                if start.column > 0 {
+                    self.select_table_cell(table, start.row, start.column - 1)?;
+                } else if start.row > 0 {
+                    self.select_table_cell(table, start.row - 1, columns - 1)?;
+                }
+            } else if start.column + 1 < columns {
+                self.select_table_cell(table, start.row, start.column + 1)?;
+            } else if start.row + 1 < rows.len() {
+                self.select_table_cell(table, start.row + 1, 0)?;
+            }
+            return Ok(());
+        }
         if !selection.is_collapsed() {
             return Err(EditorError::InvalidIntent {
                 message: "indent on a non-collapsed selection is not implemented".to_owned(),
@@ -223,6 +241,27 @@ impl Editor {
         let index = self.document.index();
         let resolved =
             index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+
+        if let Some((table, row, column, columns)) = self.table_cell_context(resolved.block_id) {
+            if outdent {
+                if column > 0 {
+                    self.select_table_cell(table, row, column - 1)?;
+                } else if row > 0 {
+                    self.select_table_cell(table, row - 1, columns - 1)?;
+                }
+            } else if column + 1 < columns {
+                self.select_table_cell(table, row, column + 1)?;
+            } else {
+                let has_next_row = matches!(
+                    self.document.kind(table),
+                    Some(BlockKind::Table { rows, .. }) if row + 1 < rows.len()
+                );
+                if has_next_row {
+                    self.select_table_cell(table, row + 1, 0)?;
+                }
+            }
+            return Ok(());
+        }
 
         if let Some(item) = self.nearest_list_item(resolved.block_id) {
             let operation = if outdent {
@@ -608,6 +647,40 @@ impl Editor {
         Ok(())
     }
 
+    fn table_cell_context(
+        &self,
+        block: md_document::BlockId,
+    ) -> Option<(md_document::BlockId, usize, usize, usize)> {
+        if !matches!(self.document.kind(block), Some(BlockKind::TableCell { .. })) {
+            return None;
+        }
+        let row = self.document.parent(block)?;
+        if !matches!(self.document.kind(row), Some(BlockKind::TableRow { .. })) {
+            return None;
+        }
+        let table = self.document.parent(row)?;
+        let Some(BlockKind::Table { aligns, rows }) = self.document.kind(table) else {
+            return None;
+        };
+        let row_index = rows.iter().position(|id| *id == row)?;
+        let column_index = self
+            .document
+            .children(row)?
+            .iter()
+            .position(|id| *id == block)?;
+        Some((table, row_index, column_index, aligns.len()))
+    }
+
+    fn select_table_cell(
+        &mut self,
+        table: md_document::BlockId,
+        row: usize,
+        column: usize,
+    ) -> EditorResult<()> {
+        let cell = CellPos::new(row, column);
+        self.set_selection(SelectionSet::new(Selection::table_cells(table, cell, cell)))
+    }
+
     fn nearest_list_item(&self, block: md_document::BlockId) -> Option<md_document::BlockId> {
         let mut current = Some(block);
         while let Some(id) = current {
@@ -692,7 +765,8 @@ mod tests {
     use crate::intent::MoveDirection::{DocEnd, DocStart, Left, Right};
     use crate::{Intent, RuleId};
     use md_document::{
-        Affinity, Anchor, BlockKind, DocPos, Document, InlineContent, Selection, SelectionSet,
+        Affinity, Anchor, BlockKind, CellPos, DocPos, Document, InlineContent, Selection,
+        SelectionKind, SelectionSet,
     };
 
     fn editor_at(pos: usize) -> Editor {
@@ -710,6 +784,42 @@ mod tests {
 
     fn head(editor: &Editor) -> DocPos {
         editor.selection().primary_selection().unwrap().head.pos
+    }
+
+    fn editor_with_table() -> Editor {
+        let mut document = Document::new();
+        let table = document
+            .insert_block(
+                None,
+                0,
+                BlockKind::Table {
+                    aligns: vec![md_document::Align::Left; 2],
+                    rows: vec![],
+                },
+            )
+            .unwrap();
+        for values in [["a", "b"], ["c", "d"]] {
+            let row = document
+                .append_block(Some(table), BlockKind::TableRow { cells: vec![] })
+                .unwrap();
+            for value in values {
+                document
+                    .append_block(
+                        Some(row),
+                        BlockKind::TableCell {
+                            content: InlineContent::from_text(value),
+                        },
+                    )
+                    .unwrap();
+            }
+        }
+        let first_row = document.children(table).unwrap()[0];
+        let first_cell = document.children(first_row).unwrap()[0];
+        let leaf_index = document.index().leaf_index(first_cell).unwrap();
+        let pos = document.index().leaf_start(leaf_index).unwrap();
+        let selection =
+            SelectionSet::new(Selection::collapsed(DocPos::new(pos), Affinity::Downstream));
+        Editor::with_selection(document, selection).unwrap()
     }
 
     #[test]
@@ -1084,5 +1194,57 @@ mod tests {
             .unwrap();
         assert_eq!(editor.document().kind(root).unwrap().leaf_len(), Some(2));
         assert_eq!(head(&editor), DocPos::ZERO);
+    }
+
+    fn table_cell(editor: &Editor) -> CellPos {
+        match editor.selection().primary_selection().unwrap().kind {
+            SelectionKind::TableCells { start, .. } => start,
+            _ => panic!("expected table-cell selection"),
+        }
+    }
+
+    #[test]
+    fn tab_moves_to_next_table_cell() {
+        let mut editor = editor_with_table();
+        editor
+            .dispatch(Intent::ChangeIndent { outdent: false })
+            .unwrap();
+        assert_eq!(table_cell(&editor), CellPos::new(0, 1));
+    }
+
+    #[test]
+    fn shift_tab_moves_to_previous_table_cell() {
+        let mut editor = editor_with_table();
+        let table = *editor.document().root_children().first().unwrap();
+        editor
+            .set_selection(SelectionSet::new(Selection::table_cells(
+                table,
+                CellPos::new(0, 1),
+                CellPos::new(0, 1),
+            )))
+            .unwrap();
+        editor
+            .dispatch(Intent::ChangeIndent { outdent: true })
+            .unwrap();
+        assert_eq!(table_cell(&editor), CellPos::new(0, 0));
+    }
+
+    #[test]
+    fn tab_at_last_table_cell_is_noop() {
+        let mut editor = editor_with_table();
+        let table = *editor.document().root_children().first().unwrap();
+        editor
+            .set_selection(SelectionSet::new(Selection::table_cells(
+                table,
+                CellPos::new(1, 1),
+                CellPos::new(1, 1),
+            )))
+            .unwrap();
+        let revision = editor.document_revision();
+        editor
+            .dispatch(Intent::ChangeIndent { outdent: false })
+            .unwrap();
+        assert_eq!(editor.document_revision(), revision);
+        assert_eq!(table_cell(&editor), CellPos::new(1, 1));
     }
 }
