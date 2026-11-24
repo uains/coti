@@ -1643,7 +1643,7 @@ impl Editor {
         transaction.push(operation);
         self.commit(transaction)?;
 
-        self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Downstream));
+        self.selection = SelectionSet::new(Selection::collapsed(from, Affinity::Upstream));
         self.pending_marks = None;
         self.state_revision += 1;
         Ok(())
@@ -2343,6 +2343,20 @@ mod tests {
                 .any(|run| matches!(run.atom_kind(), Some(md_document::AtomKind::HardBreak)))
         );
         assert_eq!(editor.document().root_children().len(), 2);
+    }
+
+    #[test]
+    fn repeated_backspace_at_line_end_does_not_join_next_line() {
+        let source = "abc\n\ndef\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(DocPos::new(3), Affinity::Upstream));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.starts_with("a\n"), "unexpected output: {output:?}");
+        assert!(!output.starts_with("abdef"), "unexpected join: {output:?}");
+        assert!(output.contains("def"), "unexpected output: {output:?}");
     }
 
     #[test]

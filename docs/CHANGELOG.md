@@ -1425,3 +1425,10 @@
 - 唯一空项：删除整个列表，原位置变为空段落。
 - 新增 `ExitListItem` 操作与测试 `enter_on_empty_list_item_exits_list`。
 - 303 个测试通过。
+
+## 2026-11-24 · 修复连续删除在行尾合并下一行
+
+- Backspace 删除后光标 affinity 从 Downstream 改为 Upstream。
+- 非末尾行连续删除时，第二次仍在当前行删除，不会解析到下一块并合并。
+- 新增 `repeated_backspace_at_line_end_does_not_join_next_line`。
+- 304 个测试通过。
