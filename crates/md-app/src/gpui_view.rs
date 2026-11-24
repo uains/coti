@@ -92,13 +92,57 @@ pub struct CotiView {
     palette_query: String,
     palette_index: usize,
     menu_open: Option<usize>,
+    editor_active: bool,
     search_active: bool,
     palette_active: bool,
+    search_marked: String,
+    palette_marked: String,
     caret_visible: bool,
     blink_task: Task<()>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputTarget {
+    Editor,
+    Search,
+    Palette,
+}
+
 impl CotiView {
+    fn input_target(&self) -> InputTarget {
+        if self.search_active {
+            InputTarget::Search
+        } else if self.palette_active {
+            InputTarget::Palette
+        } else {
+            InputTarget::Editor
+        }
+    }
+
+    fn target_text(&self) -> String {
+        match self.input_target() {
+            InputTarget::Search => format!("{}{}", self.search.query, self.search_marked),
+            InputTarget::Palette => format!("{}{}", self.palette_query, self.palette_marked),
+            InputTarget::Editor => self.ime_text(),
+        }
+    }
+
+    fn input_bounds(&self, window: &Window) -> Bounds<Pixels> {
+        let viewport = window.viewport_size();
+        let width = f32::from(viewport.width);
+        match self.input_target() {
+            InputTarget::Search => Bounds::new(
+                point(px(width - 16.0 - 360.0 + 12.0), px(54.0)),
+                size(px(1.0), px(16.0)),
+            ),
+            InputTarget::Palette => Bounds::new(
+                point(px((width - 460.0) / 2.0 + 8.0), px(80.0)),
+                size(px(1.0), px(16.0)),
+            ),
+            InputTarget::Editor => Bounds::new(point(px(0.0), px(0.0)), size(px(1.0), px(16.0))),
+        }
+    }
+
     /// Creates a view for an application state.
     #[must_use]
     pub fn new(state: AppState, viewport: Size, cx: &mut Context<Self>) -> Self {
@@ -114,8 +158,11 @@ impl CotiView {
             palette_query: String::new(),
             palette_index: 0,
             menu_open: None,
+            editor_active: false,
             search_active: false,
             palette_active: false,
+            search_marked: String::new(),
+            palette_marked: String::new(),
             caret_visible: true,
             blink_task: Task::ready(()),
         }
@@ -200,7 +247,9 @@ impl CotiView {
 
     fn open_search(&mut self) {
         self.search_open = true;
+        self.editor_active = false;
         self.search_active = false;
+        self.search_marked.clear();
         self.search = SearchState::default();
         self.palette_open = false;
         self.palette_active = false;
@@ -231,18 +280,20 @@ impl CotiView {
     }
 
     fn activate_search(&mut self, cx: &mut Context<Self>) {
+        self.editor_active = false;
         self.search_active = true;
         self.palette_active = false;
         self.reset_blink(cx);
     }
 
     fn activate_palette(&mut self, cx: &mut Context<Self>) {
+        self.editor_active = false;
         self.palette_active = true;
         self.search_active = false;
         self.reset_blink(cx);
     }
 
-    fn search_key(&mut self, key: &str, text: Option<&str>, cx: &mut Context<Self>) {
+    fn search_key(&mut self, key: &str, _text: Option<&str>, cx: &mut Context<Self>) {
         match key {
             "escape" => {
                 self.search_open = false;
@@ -253,15 +304,12 @@ impl CotiView {
                 self.search.next_match();
             }
             "backspace" => {
-                self.search.query.pop();
+                if self.search_marked.pop().is_none() {
+                    self.search.query.pop();
+                }
                 self.run_search();
             }
-            _ => {
-                if let Some(text) = text {
-                    self.search.query.push_str(text);
-                    self.run_search();
-                }
-            }
+            _ => {}
         }
         cx.notify();
     }
@@ -279,7 +327,7 @@ impl CotiView {
     fn palette_key(
         &mut self,
         key: &str,
-        text: Option<&str>,
+        _text: Option<&str>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -304,15 +352,12 @@ impl CotiView {
                 }
             }
             "backspace" => {
-                self.palette_query.pop();
+                if self.palette_marked.pop().is_none() {
+                    self.palette_query.pop();
+                }
                 self.palette_index = 0;
             }
-            _ => {
-                if let Some(text) = text {
-                    self.palette_query.push_str(text);
-                    self.palette_index = 0;
-                }
-            }
+            _ => {}
         }
         cx.notify();
     }
@@ -611,6 +656,12 @@ impl CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.editor_active = true;
+        self.search_active = false;
+        self.palette_active = false;
+        self.search_marked.clear();
+        self.palette_marked.clear();
+        self.stop_blink();
         window.focus(&self.focus_handle, cx);
         let point = md_core::Point::new(
             f32::from(event.position.x),
@@ -1024,16 +1075,24 @@ impl Render for CotiView {
                             .gap(px(1.0))
                             .text_size(px(13.0))
                             .text_color(muted);
-                        if self.search.query.is_empty() {
-                            if self.search_active && self.caret_visible {
-                                field = field.child(input_caret(accent));
-                            }
+                        let caret_color = if self.search_active && self.caret_visible {
+                            accent
+                        } else {
+                            rgba(0x0000_0000)
+                        };
+                        if self.search.query.is_empty() && self.search_marked.is_empty() {
+                            field = field.child(input_caret(caret_color));
                             field = field.child(div().text_color(faint).child("搜索文档…"));
                         } else {
-                            field = field.child(self.search.query.clone());
-                            if self.search_active && self.caret_visible {
-                                field = field.child(input_caret(accent));
+                            if !self.search.query.is_empty() {
+                                field = field.child(self.search.query.clone());
                             }
+                            if !self.search_marked.is_empty() {
+                                field = field.child(
+                                    div().text_color(accent).child(self.search_marked.clone()),
+                                );
+                            }
+                            field = field.child(input_caret(caret_color));
                         }
                         field
                     })
@@ -1078,16 +1137,24 @@ impl Render for CotiView {
                         )
                         .child({
                             let mut field = div().flex().items_center().gap(px(1.0));
-                            if self.palette_query.is_empty() {
-                                if self.palette_active && self.caret_visible {
-                                    field = field.child(input_caret(accent));
-                                }
+                            let caret_color = if self.palette_active && self.caret_visible {
+                                accent
+                            } else {
+                                rgba(0x0000_0000)
+                            };
+                            if self.palette_query.is_empty() && self.palette_marked.is_empty() {
+                                field = field.child(input_caret(caret_color));
                                 field = field.child(div().text_color(faint).child("输入命令…"));
                             } else {
-                                field = field.child(self.palette_query.clone());
-                                if self.palette_active && self.caret_visible {
-                                    field = field.child(input_caret(accent));
+                                if !self.palette_query.is_empty() {
+                                    field = field.child(self.palette_query.clone());
                                 }
+                                if !self.palette_marked.is_empty() {
+                                    field = field.child(
+                                        div().text_color(accent).child(self.palette_marked.clone()),
+                                    );
+                                }
+                                field = field.child(input_caret(caret_color));
                             }
                             field
                         }),
@@ -1137,7 +1204,7 @@ impl EntityInputHandler for CotiView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
-        let text = self.ime_text();
+        let text = self.target_text();
         let start = Self::utf16_to_byte(&text, range.start);
         let end = Self::utf16_to_byte(&text, range.end);
         (start <= end).then(|| text[start..end].to_owned())
@@ -1149,13 +1216,31 @@ impl EntityInputHandler for CotiView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
-        let selection = self.window.state.editor().selection().primary_selection()?;
-        let anchor = self.doc_to_utf16(selection.anchor.pos);
-        let head = self.doc_to_utf16(selection.head.pos);
-        Some(UTF16Selection {
-            range: anchor.min(head)..anchor.max(head),
-            reversed: head < anchor,
-        })
+        match self.input_target() {
+            InputTarget::Search => {
+                let start = Self::utf16_len(&self.search.query);
+                Some(UTF16Selection {
+                    range: start..start + Self::utf16_len(&self.search_marked),
+                    reversed: false,
+                })
+            }
+            InputTarget::Palette => {
+                let start = Self::utf16_len(&self.palette_query);
+                Some(UTF16Selection {
+                    range: start..start + Self::utf16_len(&self.palette_marked),
+                    reversed: false,
+                })
+            }
+            InputTarget::Editor => {
+                let selection = self.window.state.editor().selection().primary_selection()?;
+                let anchor = self.doc_to_utf16(selection.anchor.pos);
+                let head = self.doc_to_utf16(selection.head.pos);
+                Some(UTF16Selection {
+                    range: anchor.min(head)..anchor.max(head),
+                    reversed: head < anchor,
+                })
+            }
+        }
     }
 
     fn marked_text_range(
@@ -1163,15 +1248,35 @@ impl EntityInputHandler for CotiView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<std::ops::Range<usize>> {
-        let composition = self.window.state.editor().composition()?;
-        let selection = self.window.state.editor().selection().primary_selection()?;
-        let caret = self.doc_to_utf16(selection.head.pos);
-        Some(caret..caret + Self::utf16_len(&composition.text))
+        match self.input_target() {
+            InputTarget::Search => {
+                let start = Self::utf16_len(&self.search.query);
+                (!self.search_marked.is_empty())
+                    .then(|| start..start + Self::utf16_len(&self.search_marked))
+            }
+            InputTarget::Palette => {
+                let start = Self::utf16_len(&self.palette_query);
+                (!self.palette_marked.is_empty())
+                    .then(|| start..start + Self::utf16_len(&self.palette_marked))
+            }
+            InputTarget::Editor => {
+                let composition = self.window.state.editor().composition()?;
+                let selection = self.window.state.editor().selection().primary_selection()?;
+                let caret = self.doc_to_utf16(selection.head.pos);
+                Some(caret..caret + Self::utf16_len(&composition.text))
+            }
+        }
     }
 
     fn unmark_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let _ = self.window.state.edit(md_editor::Intent::ImeCancel);
-        self.window.sync_view();
+        match self.input_target() {
+            InputTarget::Search => self.search_marked.clear(),
+            InputTarget::Palette => self.palette_marked.clear(),
+            InputTarget::Editor => {
+                let _ = self.window.state.edit(md_editor::Intent::ImeCancel);
+                self.window.sync_view();
+            }
+        }
         window.notify_text_input_changed(&self.focus_handle);
         cx.notify();
     }
@@ -1183,7 +1288,26 @@ impl EntityInputHandler for CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.search_open || self.palette_open {
+        match self.input_target() {
+            InputTarget::Search => {
+                self.search.query.push_str(text);
+                self.search_marked.clear();
+                self.run_search();
+                window.notify_text_input_changed(&self.focus_handle);
+                cx.notify();
+                return;
+            }
+            InputTarget::Palette => {
+                self.palette_query.push_str(text);
+                self.palette_marked.clear();
+                self.palette_index = 0;
+                window.notify_text_input_changed(&self.focus_handle);
+                cx.notify();
+                return;
+            }
+            InputTarget::Editor => {}
+        }
+        if !self.editor_active {
             return;
         }
         if let Some(range) = range {
@@ -1208,7 +1332,24 @@ impl EntityInputHandler for CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.search_open || self.palette_open {
+        match self.input_target() {
+            InputTarget::Search => {
+                self.search_marked = new_text.to_owned();
+                self.run_search();
+                window.notify_text_input_changed(&self.focus_handle);
+                cx.notify();
+                return;
+            }
+            InputTarget::Palette => {
+                self.palette_marked = new_text.to_owned();
+                self.palette_index = 0;
+                window.notify_text_input_changed(&self.focus_handle);
+                cx.notify();
+                return;
+            }
+            InputTarget::Editor => {}
+        }
+        if !self.editor_active {
             return;
         }
         if let Some(range) = range {
@@ -1228,9 +1369,12 @@ impl EntityInputHandler for CotiView {
         &mut self,
         range_utf16: std::ops::Range<usize>,
         element_bounds: Bounds<Pixels>,
-        _window: &mut Window,
+        window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
+        if !matches!(self.input_target(), InputTarget::Editor) {
+            return Some(self.input_bounds(window));
+        }
         let _ = range_utf16;
         let caret = self.window.view.layout.caret_rect(
             self.window
@@ -1254,9 +1398,12 @@ impl EntityInputHandler for CotiView {
         &mut self,
         range_utf16: std::ops::Range<usize>,
         element_bounds: Bounds<Pixels>,
-        _window: &mut Window,
+        window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Vec<Bounds<Pixels>> {
+        if !matches!(self.input_target(), InputTarget::Editor) {
+            return vec![self.input_bounds(window)];
+        }
         let start = self.utf16_to_doc(range_utf16.start);
         let end = self.utf16_to_doc(range_utf16.end);
         self.window
@@ -1280,12 +1427,21 @@ impl EntityInputHandler for CotiView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
-        let position = self
-            .window
-            .view
-            .layout
-            .position_at_point(md_core::Point::new(f32::from(point.x), f32::from(point.y)))?;
-        Some(self.doc_to_utf16(position))
+        match self.input_target() {
+            InputTarget::Search => Some(Self::utf16_len(&self.target_text())),
+            InputTarget::Palette => Some(Self::utf16_len(&self.target_text())),
+            InputTarget::Editor => {
+                let position = self
+                    .window
+                    .view
+                    .layout
+                    .position_at_point(md_core::Point::new(
+                        f32::from(point.x),
+                        f32::from(point.y),
+                    ))?;
+                Some(self.doc_to_utf16(position))
+            }
+        }
     }
 
     fn text_length_utf16(
@@ -1293,7 +1449,7 @@ impl EntityInputHandler for CotiView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
-        Some(Self::utf16_len(&self.ime_text()))
+        Some(Self::utf16_len(&self.target_text()))
     }
 
     fn set_selected_text_range(
@@ -1302,7 +1458,9 @@ impl EntityInputHandler for CotiView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.select_utf16(range_utf16);
+        if matches!(self.input_target(), InputTarget::Editor) {
+            self.select_utf16(range_utf16);
+        }
         cx.notify();
     }
 }
@@ -1388,6 +1546,7 @@ impl Element for DocumentElement {
             rgba(view.window.view.theme.background.0),
         )));
         let composing = view.window.state.editor().composition().is_some();
+        let editor_active = view.editor_active;
         for item in plan.items {
             match item.command {
                 PaintCommand::FillRect { rect, color } => {
@@ -1397,7 +1556,7 @@ impl Element for DocumentElement {
                     )));
                 }
                 PaintCommand::Caret { rect, color } => {
-                    if !composing {
+                    if !composing && editor_active {
                         items.push(PreparedItem::Quad(fill(
                             paint_bounds(bounds, rect, scroll),
                             rgba(color.0),
