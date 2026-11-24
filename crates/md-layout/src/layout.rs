@@ -826,6 +826,21 @@ mod tests {
     }
 
     #[test]
+    fn click_at_block_end_reports_upstream_affinity() {
+        let mut document = Document::new();
+        document
+            .set_inline_content(document.root_children()[0], InlineContent::from_text("abc"))
+            .unwrap();
+        document.append_block(None, paragraph("def")).unwrap();
+        let tree = LayoutTree::full(&document, env(400.0));
+        let line = tree.blocks[0].lines.last().unwrap();
+        let point = Point::new(line.rect.right() - 1.0, line.rect.top() + 1.0);
+        let (position, affinity) = tree.position_with_affinity(point).unwrap();
+        assert_eq!(position, DocPos::new(3));
+        assert_eq!(affinity, Affinity::Upstream);
+    }
+
+    #[test]
     fn paragraph_wraps_and_reports_height() {
         let mut document = Document::new();
         document

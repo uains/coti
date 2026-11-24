@@ -1440,3 +1440,16 @@
   - 已删空：Downstream，下一次 Backspace 命中空行本身并删除当前行。
 - 新增 `backspace_on_emptied_line_removes_that_line`。
 - 305 个测试通过。
+
+## 2026-11-24 · 编辑规则全面审计：affinity 统一
+
+- 点击：按落点设置 Upstream/Downstream（行尾/行首）。
+- 左移：落到块首用 Downstream，跨到上一块末尾用 Upstream。
+- 右移：落到当前块末尾用 Upstream，跨到下一块开头用 Downstream。
+- DocStart=Downstream，DocEnd=Upstream。
+- Enter、插入文本、缩进、标题输入规则均使用当前 selection 的 affinity 解析位置。
+- Backspace 删除后：块非空保持 Upstream，删空改 Downstream。
+- 列表边界合并/反列表/空项删除按 affinity 区分“行尾删字”和“块首合并”。
+- 修复列表后普通段落开头 Backspace 误删上一列表项字符。
+- 新增点击行尾 affinity、左右移动到列表边界、列表后段落边界、连续删除等测试。
+- 311 个测试通过。

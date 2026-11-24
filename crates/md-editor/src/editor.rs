@@ -579,7 +579,7 @@ impl Editor {
 
         let index = self.document.index();
         let resolved =
-            index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+            index.resolve_position(&self.document, selection.head.pos, selection.head.affinity)?;
 
         if let Some((table, row, column, columns)) = self.table_cell_context(resolved.block_id) {
             if outdent {
@@ -1394,7 +1394,23 @@ impl Editor {
             });
         }
 
-        let (block_id, range) = self.primary_local_range(selection.start(), selection.end())?;
+        let (block_id, range) = if selection.is_collapsed() {
+            let index = self.document.index();
+            let resolved = index.resolve_position(
+                &self.document,
+                selection.head.pos,
+                selection.head.affinity,
+            )?;
+            (
+                resolved.block_id,
+                TextRange::new(
+                    TextOffset::new(resolved.offset),
+                    TextOffset::new(resolved.offset),
+                ),
+            )
+        } else {
+            self.primary_local_range(selection.start(), selection.end())?
+        };
         let marks = self.pending_marks.clone().unwrap_or_else(Marks::plain);
         let operation = Operation::ReplaceText {
             block_id,
@@ -1407,7 +1423,7 @@ impl Editor {
         self.commit(transaction)?;
 
         let new_pos = DocPos::new(selection.start().get() + text.len());
-        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
+        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Upstream));
         self.pending_marks = None;
         self.state_revision += 1;
         self.try_heading_input_rule()?;
@@ -1423,7 +1439,7 @@ impl Editor {
         }
         let index = self.document.index();
         let resolved =
-            index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+            index.resolve_position(&self.document, selection.head.pos, selection.head.affinity)?;
         let Some(BlockKind::Paragraph(content)) = self.document.kind(resolved.block_id).cloned()
         else {
             return Ok(());
@@ -1453,7 +1469,7 @@ impl Editor {
         });
         self.commit(transaction)?;
         let new_pos = DocPos::new(selection.head.pos.get() - prefix);
-        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
+        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Upstream));
         Ok(())
     }
 
@@ -1793,15 +1809,42 @@ impl Editor {
             };
 
             changed |= next != selection.head.pos;
+            let current = index
+                .resolve_position(&self.document, selection.head.pos, selection.head.affinity)
+                .ok();
+            let affinity = match (direction, current) {
+                (MoveDirection::DocStart, _) => Affinity::Downstream,
+                (MoveDirection::DocEnd, _) => Affinity::Upstream,
+                (MoveDirection::Left, Some(current)) => {
+                    let start = index.leaf_start(index.leaf_index(current.block_id).unwrap_or(0));
+                    if start == Some(next.get()) {
+                        Affinity::Downstream
+                    } else {
+                        Affinity::Upstream
+                    }
+                }
+                (MoveDirection::Right, Some(current)) => {
+                    let end = index
+                        .leaf_index(current.block_id)
+                        .and_then(|leaf| index.leaf_start(leaf).zip(index.leaf_len(leaf)))
+                        .map(|(start, len)| start + len);
+                    if end == Some(next.get()) {
+                        Affinity::Upstream
+                    } else {
+                        Affinity::Downstream
+                    }
+                }
+                _ => Affinity::Downstream,
+            };
             if extend {
                 selections.push(Selection {
                     anchor: selection.anchor,
-                    head: Anchor::new(next, Affinity::Downstream),
+                    head: Anchor::new(next, affinity),
                     kind: SelectionKind::Range,
                     goal_x: None,
                 });
             } else {
-                selections.push(Selection::collapsed(next, Affinity::Downstream));
+                selections.push(Selection::collapsed(next, affinity));
             }
         }
 
@@ -2488,6 +2531,131 @@ mod tests {
         assert!(output.starts_with("a\n"), "unexpected output: {output:?}");
         assert!(output.contains("- b"), "unexpected output: {output:?}");
         assert!(editor.document().validate().is_ok());
+    }
+
+    #[test]
+    fn backspace_at_paragraph_after_list_does_not_eat_list_text() {
+        let source = "- a\n\nparagraph\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let paragraph = index
+            .leaf_order()
+            .iter()
+            .find(|leaf| {
+                parsed
+                    .document()
+                    .kind(**leaf)
+                    .and_then(BlockKind::inline_content)
+                    .is_some_and(|content| content.plain_text() == "paragraph")
+            })
+            .copied()
+            .unwrap();
+        let start = index
+            .leaf_start(index.leaf_index(paragraph).unwrap())
+            .unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(start),
+            Affinity::Downstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("- a"), "list text was eaten: {output:?}");
+        assert!(
+            output.contains("paragraph"),
+            "unexpected output: {output:?}"
+        );
+    }
+
+    #[test]
+    fn typing_after_move_left_appends_to_previous_item() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let second_start = index.leaf_start(1).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(second_start),
+            Affinity::Downstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor
+            .dispatch(Intent::Move {
+                direction: Left,
+                extend: false,
+            })
+            .unwrap();
+        editor.dispatch(Intent::InsertText("X".to_owned())).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("- aX"), "unexpected output: {output:?}");
+        assert!(output.contains("- b"), "unexpected output: {output:?}");
+    }
+
+    #[test]
+    fn move_left_to_list_end_keeps_upstream_affinity() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let second_start = index.leaf_start(1).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(second_start),
+            Affinity::Downstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor
+            .dispatch(Intent::Move {
+                direction: Left,
+                extend: false,
+            })
+            .unwrap();
+        let head = editor.selection().primary_selection().unwrap().head;
+        assert_eq!(head.affinity, Affinity::Upstream);
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("- b"), "unexpected merge: {output:?}");
+    }
+
+    #[test]
+    fn move_right_to_list_item_end_uses_upstream_affinity() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(DocPos::ZERO, Affinity::Downstream));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor
+            .dispatch(Intent::Move {
+                direction: Right,
+                extend: false,
+            })
+            .unwrap();
+        let head = editor.selection().primary_selection().unwrap().head;
+        assert_eq!(head.affinity, Affinity::Upstream);
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("- b"), "unexpected merge: {output:?}");
+        assert!(!output.contains("- a"), "unexpected output: {output:?}");
+    }
+
+    #[test]
+    fn move_right_to_list_start_uses_downstream_affinity() {
+        let source = "- a\n- b\n";
+        let parsed = md_markdown::parse(source).unwrap();
+        let index = parsed.document().index();
+        let first_end = index.leaf_start(0).unwrap() + index.leaf_len(0).unwrap();
+        let selection = SelectionSet::new(Selection::collapsed(
+            DocPos::new(first_end),
+            Affinity::Upstream,
+        ));
+        let mut editor = Editor::with_selection(parsed.document().clone(), selection).unwrap();
+        editor
+            .dispatch(Intent::Move {
+                direction: Right,
+                extend: false,
+            })
+            .unwrap();
+        let head = editor.selection().primary_selection().unwrap().head;
+        assert_eq!(head.affinity, Affinity::Downstream);
+        editor.dispatch(Intent::DeleteBackward).unwrap();
+        let output = md_markdown::serialize_document(editor.document(), source);
+        assert!(output.contains("- ab"), "unexpected output: {output:?}");
     }
 
     #[test]
