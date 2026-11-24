@@ -36,6 +36,7 @@ impl ThemeKind {
                 theme.selection = Color(0xD6E4_FFFF);
                 theme.caret = Color(0x3370_FFFF);
                 theme.code_background = Color(0xF5F6_F7FF);
+                theme.inline_code_background = Color(0xEFF0_F2FF);
                 theme.code_text = Color(0x1F23_29FF);
                 theme.quote_background = Color(0xF7F8_FAFF);
                 theme.quote_text = Color(0x646A_73FF);
@@ -57,6 +58,7 @@ impl ThemeKind {
                 theme.selection = Color(0x3550_7FFF);
                 theme.caret = Color(0x7FB4_FFFF);
                 theme.code_background = Color(0x2428_31FF);
+                theme.inline_code_background = Color(0x2A2E_38FF);
                 theme.code_text = Color(0xD8DE_E9FF);
                 theme.quote_background = Color(0x2023_2AFF);
                 theme.quote_text = Color(0xB8C0_CDFF);
@@ -73,6 +75,7 @@ impl ThemeKind {
                 theme.selection = Color(0xFFE0_00FF);
                 theme.caret = Color::BLACK;
                 theme.code_background = Color(0xF0F0_00FF);
+                theme.inline_code_background = Color(0xE8E8_E8FF);
                 theme.code_text = Color::BLACK;
                 theme.quote_background = Color(0xE8E8_E8FF);
                 theme.quote_text = Color::BLACK;
@@ -319,6 +322,7 @@ mod tests {
         assert_eq!(theme.background, Color(0xFFFF_FFFF));
         assert_eq!(theme.text, Color(0x1F23_29FF));
         assert_eq!(theme.accent, Color(0x3370_FFFF));
+        assert_eq!(theme.inline_code_background, Color(0xEFF0_F2FF));
         assert_eq!(theme.font_size, 15.0);
         assert_eq!(theme.line_height, 26.0);
         let style = ThemeKind::Feishu.layout_style(15.0, 26.0);

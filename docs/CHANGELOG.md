@@ -1536,3 +1536,10 @@
 - 水平左右各 4px padding，垂直上下各 2px padding。
 - 圆角矩形通过 GPUI `PaintQuad::corner_radii` 实际绘制。
 - 322 个测试通过。
+
+## 2026-11-24 · 行内代码背景与引用背景区分
+
+- Theme 新增 `inline_code_background`。
+- 飞书主题：引用背景 `#F7F8FA`，行内代码背景 `#EFF0F2`，明显区分。
+- Ink 使用深色 inline code 背景，Contrast 使用 `#E8E8E8`。
+- 322 个测试通过。

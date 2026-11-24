@@ -117,7 +117,7 @@ fn paint_text(block: &BlockLayout, plan: &mut PaintPlan, theme: &Theme, inherite
                             (end_x - start_x).max(1.0) + 8.0,
                             line.font_size + 4.0,
                         ),
-                        color: theme.code_background,
+                        color: theme.inline_code_background,
                         radius: 4.0,
                     },
                 );
@@ -428,7 +428,7 @@ mod tests {
         assert!(plan.items.iter().any(|item| matches!(
             &item.command,
             PaintCommand::RoundRect { color, radius, .. }
-                if *color == theme.code_background && (*radius - 4.0).abs() < f32::EPSILON
+                if *color == theme.inline_code_background && (*radius - 4.0).abs() < f32::EPSILON
         )));
     }
 

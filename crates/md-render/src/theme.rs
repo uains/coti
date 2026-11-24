@@ -34,6 +34,8 @@ pub struct Theme {
     pub caret: Color,
     /// Code block background.
     pub code_background: Color,
+    /// Inline code background.
+    pub inline_code_background: Color,
     /// Code block text.
     pub code_text: Color,
     /// Quote background.
@@ -71,6 +73,7 @@ impl Default for Theme {
             selection: Color(0xBFD7_FFFF),
             caret: Color(0x1A73_E8FF),
             code_background: Color(0xF5F6_FAFF),
+            inline_code_background: Color(0xEFF0_F2FF),
             code_text: Color(0x2A2D_33FF),
             quote_background: Color(0xF8F9_FCFF),
             quote_text: Color(0x5057_63FF),
