@@ -1437,7 +1437,7 @@ docs/
   5. Enter/Backspace/DeleteForward/Tab 等规则表与夹具。
   6. 随机 Intent 属性测试；History 在阶段 6 接入。
 
-### 阶段 5：`md-editor` 编辑内核（进行中）
+### 阶段 5：`md-editor` 编辑内核（已完成，核心范围）
 
 **当前进度：** 阶段 5 核心范围完成（5.1～5.6），完整 DESIGN §8 规则覆盖列为后续增量。
 
@@ -1446,9 +1446,9 @@ docs/
 | 5.1 Intent / Editor / Rule 表 | 完成 | `Intent`、`Editor`、`EditorConfig`、`Composition`、`RuleId`、静态 Move 规则 |
 | 5.2 Operation | 完成 | ReplaceText/SetInline/SetRaw/Insert/Remove/Move/SetKind + inverse |
 | 5.3 Transaction | 完成 | 快照回滚、base revision、validate、ChangeSet |
-| 5.4 PositionMapping | 部分完成 | Insert/Delete/Move 线性映射与组合 |
-| 5.5 Rule Table | 部分完成 | InsertText/DeleteBackward 已接入 Transaction |
-| 5.6 属性测试 | 未开始 | 随机 Intent、选区映射、回滚 |
+| 5.4 PositionMapping | 完成（基础） | Insert/Delete/Move 线性映射与组合 |
+| 5.5 Rule Table | 完成（核心） | Move/Insert/Delete/Enter/Indent/Table/Quote 规则 |
+| 5.6 属性测试 | 完成 | 随机 Insert/Delete/Enter、陈旧事务、选区合法性 |
 
 #### 当前接口
 
