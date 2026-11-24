@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 md-core.workspace = true
 md-document.workspace = true
+pulldown-cmark.workspace = true
 thiserror.workspace = true
 
 [lints]

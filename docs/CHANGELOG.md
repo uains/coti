@@ -716,3 +716,44 @@
 ### 下一步
 
 - 4.2：pulldown-cmark Parser/Builder，构建 Block/Inline/Marks/Atom 并写入 SourceHint。
+
+## 2026-11-24 · 阶段 4 / 步骤 4.2：Markdown Parser/Builder
+
+**状态：** 已完成。
+
+### 变更
+
+- 引入 `pulldown-cmark = "0.13"`（锁定到 0.13.6）。
+- 新增 `MarkdownDocument`：
+  - 持有 `Document`、原始 `Arc<str>` 与 dirty 标记。
+  - `parse` 返回未编辑文档；`serialize` 未编辑时逐字节返回原文。
+- 新增 `parser` 模块，启用：
+  - CommonMark。
+  - GFM。
+  - Tables、Strikethrough、TaskLists、Footnotes、Math、YAML MetadataBlock。
+- Builder 支持：
+  - Heading、Paragraph、BlockQuote、List、ListItem、Table/TableRow/TableCell。
+  - CodeBlock、HtmlBlock、FrontMatter、ThematicBreak、MathBlock（DisplayMath）。
+  - Strong/Emphasis/Strikethrough、Code、Link、Image、SoftBreak、HardBreak、InlineMath、FootnoteRef。
+  - TaskListMarker 写入 ListItem.task。
+  - 每个块写入 pristine SourceHint（原始 Arc + range）。
+- 新增 5 个 parser 测试：标题/段落/引用、列表/任务、代码/表格/分隔线、链接/图片/Atom、Frontmatter/HTML。
+- 新增 `serializer` 占位：dirty 序列化在 4.3 实现；pristine 仍返回原文。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：138 个测试通过。
+- 5 个 parser 测试全部通过 `Document::validate` 与逐字节 pristine 输出。
+
+### 设计说明
+
+- 空容器由 Builder 补空 Paragraph，保证 Document 不变量。
+- FootnoteDefinition / DefinitionList 暂映射为 Quote 容器，确保内容不丢失；这是阶段 4 的已知模型近似。
+- inline image 的 alt 目前未保留在 `AtomKind::Image` 中；仅保存 ImageRef，后续需要扩展 AtomKind 或 ImageRef。
+- `MarkdownDocument::serialize` 的 dirty 路径当前是占位，下一步替换为真正的 Serializer。
+
+### 下一步
+
+- 4.3：Serializer：Inline Writer、Block Writer、Marks 输出、列表序号、代码围栏、表格、Raw、dirty 重新序列化。
