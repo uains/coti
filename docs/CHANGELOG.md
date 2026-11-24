@@ -1326,3 +1326,11 @@
 - Windows 原生拖动：ReleaseCapture + WM_NCLBUTTONDOWN(HTCAPTION)，实测窗口移动成功。
 - 标题栏 SVG 图标与 AssetSource。
 - 293 个测试通过。
+
+## 2026-11-24 · 搜索/命令框 caret 聚焦与闪烁
+
+- 打开搜索/命令面板时不自动激活输入框；点击输入框后才显示 caret。
+- caret 位于文本最前（空输入时在占位符前），不再跑到占位符末尾。
+- 占位符使用 faint 颜色，降低对比度。
+- caret 500ms 闪烁；关闭面板或切换输入时停止。
+- 293 个测试通过。

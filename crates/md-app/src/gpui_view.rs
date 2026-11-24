@@ -7,8 +7,9 @@ use gpui::{
     InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, Pixels, Render,
     RenderImage, ScrollDelta, ScrollEvent, SharedString, StatefulInteractiveElement, Style, Styled,
-    TextAlign, TextRun, TitlebarOptions, UTF16Selection, Window, WindowBounds, WindowDecorations,
-    WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size, svg,
+    Task, TextAlign, TextRun, TitlebarOptions, UTF16Selection, Window, WindowBounds,
+    WindowDecorations, WindowOptions, WindowTextSystem, div, fill, point, px, relative, rgba, size,
+    svg,
 };
 use gpui_platform::application;
 use md_core::Size;
@@ -20,6 +21,7 @@ use std::collections::HashMap;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{AppState, AppWindow};
@@ -90,6 +92,10 @@ pub struct CotiView {
     palette_query: String,
     palette_index: usize,
     menu_open: Option<usize>,
+    search_active: bool,
+    palette_active: bool,
+    caret_visible: bool,
+    blink_task: Task<()>,
 }
 
 impl CotiView {
@@ -108,6 +114,10 @@ impl CotiView {
             palette_query: String::new(),
             palette_index: 0,
             menu_open: None,
+            search_active: false,
+            palette_active: false,
+            caret_visible: true,
+            blink_task: Task::ready(()),
         }
     }
 
@@ -190,14 +200,54 @@ impl CotiView {
 
     fn open_search(&mut self) {
         self.search_open = true;
+        self.search_active = false;
         self.search = SearchState::default();
         self.palette_open = false;
+        self.palette_active = false;
+        self.stop_blink();
+    }
+
+    fn stop_blink(&mut self) {
+        self.caret_visible = false;
+        self.blink_task = Task::ready(());
+    }
+
+    fn reset_blink(&mut self, cx: &mut Context<Self>) {
+        self.caret_visible = true;
+        self.blink_task = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                let result = this.update(cx, |this, cx| {
+                    this.caret_visible = !this.caret_visible;
+                    cx.notify();
+                });
+                if result.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    fn activate_search(&mut self, cx: &mut Context<Self>) {
+        self.search_active = true;
+        self.palette_active = false;
+        self.reset_blink(cx);
+    }
+
+    fn activate_palette(&mut self, cx: &mut Context<Self>) {
+        self.palette_active = true;
+        self.search_active = false;
+        self.reset_blink(cx);
     }
 
     fn search_key(&mut self, key: &str, text: Option<&str>, cx: &mut Context<Self>) {
         match key {
             "escape" => {
                 self.search_open = false;
+                self.search_active = false;
+                self.stop_blink();
             }
             "enter" => {
                 self.search.next_match();
@@ -234,7 +284,11 @@ impl CotiView {
         cx: &mut Context<Self>,
     ) {
         match key {
-            "escape" => self.palette_open = false,
+            "escape" => {
+                self.palette_open = false;
+                self.palette_active = false;
+                self.stop_blink();
+            }
             "enter" => {
                 let commands = self.palette_filtered();
                 if let Some(command) = commands.get(self.palette_index).copied() {
@@ -430,11 +484,23 @@ impl CotiView {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
         if self.search_open {
-            self.search_key(key, event.keystroke.key_char.as_deref(), cx);
+            if self.search_active {
+                self.search_key(key, event.keystroke.key_char.as_deref(), cx);
+            } else if key == "escape" {
+                self.search_open = false;
+                self.stop_blink();
+                cx.notify();
+            }
             return;
         }
         if self.palette_open {
-            self.palette_key(key, event.keystroke.key_char.as_deref(), window, cx);
+            if self.palette_active {
+                self.palette_key(key, event.keystroke.key_char.as_deref(), window, cx);
+            } else if key == "escape" {
+                self.palette_open = false;
+                self.stop_blink();
+                cx.notify();
+            }
             return;
         }
         if modifiers.control && key.eq_ignore_ascii_case("a") {
@@ -459,6 +525,8 @@ impl CotiView {
         }
         if modifiers.control && key.eq_ignore_ascii_case("k") {
             self.palette_open = true;
+            self.palette_active = false;
+            self.stop_blink();
             self.palette_query.clear();
             self.palette_index = 0;
             cx.notify();
@@ -626,6 +694,7 @@ impl Render for CotiView {
         let border = rgba(self.window.view.theme.border.0);
         let muted = rgba(self.window.view.theme.muted.0);
         let accent = rgba(self.window.view.theme.accent.0);
+        let faint = rgba(0x8080_8066);
         let title = self.window.state.title();
 
         let minimize = window_icon_button(
@@ -736,6 +805,8 @@ impl Render for CotiView {
                 muted,
                 cx.listener(|this, _, _, cx| {
                     this.palette_open = true;
+                    this.palette_active = false;
+                    this.stop_blink();
                     this.palette_query.clear();
                     this.palette_index = 0;
                     cx.notify();
@@ -941,24 +1012,31 @@ impl Render for CotiView {
                         MouseButton::Left,
                         cx.listener(|this, _, window, cx| {
                             window.focus(&this.focus_handle, cx);
+                            this.activate_search(cx);
                             cx.notify();
                         }),
                     )
-                    .child(
-                        div()
+                    .child({
+                        let mut field = div()
                             .flex_1()
                             .flex()
                             .items_center()
                             .gap(px(1.0))
                             .text_size(px(13.0))
-                            .text_color(muted)
-                            .child(if self.search.query.is_empty() {
-                                "搜索文档…".to_owned()
-                            } else {
-                                self.search.query.clone()
-                            })
-                            .child(div().w(px(1.5)).h(px(15.0)).bg(accent)),
-                    )
+                            .text_color(muted);
+                        if self.search.query.is_empty() {
+                            if self.search_active && self.caret_visible {
+                                field = field.child(input_caret(accent));
+                            }
+                            field = field.child(div().text_color(faint).child("搜索文档…"));
+                        } else {
+                            field = field.child(self.search.query.clone());
+                            if self.search_active && self.caret_visible {
+                                field = field.child(input_caret(accent));
+                            }
+                        }
+                        field
+                    })
                     .child(div().text_size(px(11.0)).text_color(muted).child(count))
                     .child(
                         div()
@@ -985,12 +1063,33 @@ impl Render for CotiView {
                     div()
                         .px_2()
                         .py_1()
+                        .flex()
+                        .items_center()
+                        .gap(px(1.0))
                         .text_size(px(13.0))
                         .text_color(muted)
-                        .child(if self.palette_query.is_empty() {
-                            "输入命令…".to_owned()
-                        } else {
-                            self.palette_query.clone()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, window, cx| {
+                                window.focus(&this.focus_handle, cx);
+                                this.activate_palette(cx);
+                                cx.notify();
+                            }),
+                        )
+                        .child({
+                            let mut field = div().flex().items_center().gap(px(1.0));
+                            if self.palette_query.is_empty() {
+                                if self.palette_active && self.caret_visible {
+                                    field = field.child(input_caret(accent));
+                                }
+                                field = field.child(div().text_color(faint).child("输入命令…"));
+                            } else {
+                                field = field.child(self.palette_query.clone());
+                                if self.palette_active && self.caret_visible {
+                                    field = field.child(input_caret(accent));
+                                }
+                            }
+                            field
                         }),
                 );
             for (index, command) in commands.into_iter().take(8).enumerate() {
@@ -1004,6 +1103,8 @@ impl Render for CotiView {
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.palette_open = false;
+                        this.palette_active = false;
+                        this.stop_blink();
                         this.execute_command(command, window, cx);
                     }))
                     .child(format!("{}   {}", command.id(), command.shortcut()));
@@ -1460,6 +1561,10 @@ fn paint_bounds(bounds: Bounds<Pixels>, rect: md_core::Rect, scroll: f32) -> Bou
         ),
         size(px(rect.width().max(1.0)), px(rect.height().max(1.0))),
     )
+}
+
+fn input_caret(color: gpui::Rgba) -> impl IntoElement {
+    div().w(px(1.5)).h(px(15.0)).flex_none().bg(color)
 }
 
 fn toolbar_icon(
