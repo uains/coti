@@ -101,7 +101,7 @@ pub struct CotiView {
     blink_task: Task<()>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputTarget {
     Editor,
     Search,
@@ -656,6 +656,9 @@ impl CotiView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.search_open || self.palette_open {
+            return;
+        }
         self.editor_active = true;
         self.search_active = false;
         self.palette_active = false;
@@ -1045,6 +1048,8 @@ impl Render for CotiView {
             };
             root = root.child(
                 div()
+                    .id("search-overlay")
+                    .occlude()
                     .absolute()
                     .top(px(44.0))
                     .right(px(16.0))
@@ -1064,6 +1069,7 @@ impl Render for CotiView {
                         cx.listener(|this, _, window, cx| {
                             window.focus(&this.focus_handle, cx);
                             this.activate_search(cx);
+                            cx.stop_propagation();
                             cx.notify();
                         }),
                     )
@@ -1109,6 +1115,8 @@ impl Render for CotiView {
         if self.palette_open {
             let commands = self.palette_filtered();
             let mut panel = div()
+                .id("palette-panel")
+                .occlude()
                 .w(px(460.0))
                 .flex()
                 .flex_col()
@@ -1132,6 +1140,7 @@ impl Render for CotiView {
                             cx.listener(|this, _, window, cx| {
                                 window.focus(&this.focus_handle, cx);
                                 this.activate_palette(cx);
+                                cx.stop_propagation();
                                 cx.notify();
                             }),
                         )
