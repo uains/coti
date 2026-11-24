@@ -180,6 +180,14 @@ impl LayoutTree {
     ) -> Option<Rect> {
         let resolved = self.index.resolve_position(document, pos, affinity).ok()?;
         let layout = self.block_outer(resolved.block_id)?;
+        if layout.lines.is_empty() {
+            return Some(Rect::new(
+                layout.rect.left(),
+                layout.rect.top(),
+                1.0,
+                layout.rect.height(),
+            ));
+        }
         let line = layout
             .lines
             .iter()
@@ -197,6 +205,14 @@ impl LayoutTree {
     pub fn caret_rect(&self, pos: DocPos) -> Option<Rect> {
         let hit = self.index.leaf_at(pos.get())?;
         let layout = self.block_outer(hit.block_id)?;
+        if layout.lines.is_empty() {
+            return Some(Rect::new(
+                layout.rect.left(),
+                layout.rect.top(),
+                1.0,
+                layout.rect.height(),
+            ));
+        }
         let line = layout
             .lines
             .iter()
@@ -1047,6 +1063,22 @@ mod tests {
         let rects = tree.selection_rects(&selection);
         assert!(!rects.is_empty());
         assert!(rects.iter().all(|rect| rect.width() > 0.0));
+    }
+
+    #[test]
+    fn caret_rect_exists_for_empty_paragraph() {
+        let mut document = Document::new();
+        document
+            .set_inline_content(document.root_children()[0], InlineContent::from_text("a"))
+            .unwrap();
+        let empty = document.append_block(None, paragraph("")).unwrap();
+        let tree = LayoutTree::full(&document, env(300.0));
+        let leaf = tree.index.leaf_index(empty).unwrap();
+        let pos = DocPos::new(tree.index.leaf_start(leaf).unwrap());
+        let caret = tree.caret_rect(pos).unwrap();
+        let block = tree.block_outer(empty).unwrap();
+        assert_eq!(caret.top(), block.rect.top());
+        assert!(caret.height() > 0.0);
     }
 
     #[test]

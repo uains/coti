@@ -1578,3 +1578,11 @@
 - 保持 canonical serializer 稳定，fixture 全部通过。
 - 新增空行间距布局测试。
 - 323 个测试通过。
+
+## 2026-11-24 · Quote 留白、空行显示、空段落光标
+
+- Quote/Footnote 上下 padding：默认 8px，飞书主题 10px。
+- 解析根块间距，把额外空行写入 `blank_lines_after`，布局按行高补出空白间距。
+- 空段落没有 lines 时，caret_rect 回退到块矩形起点，修复换行后光标跑到下一行首的问题。
+- 新增空段落 caret 测试。
+- 324 个测试通过。
