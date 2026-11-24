@@ -22,6 +22,8 @@ impl RuleId {
     pub const INSERT_TEXT: Self = Self(0x0201);
     /// Delete backward by grapheme/atom.
     pub const DELETE_BACKWARD: Self = Self(0x0202);
+    /// Split the current block at the caret.
+    pub const ENTER: Self = Self(0x0203);
 
     /// Returns the numeric id.
     #[must_use]
@@ -110,6 +112,10 @@ fn delete_backward(ctx: &Ctx<'_>) -> bool {
     matches!(ctx.intent, Intent::DeleteBackward)
 }
 
+fn enter(ctx: &Ctx<'_>) -> bool {
+    matches!(ctx.intent, Intent::InsertNewline)
+}
+
 static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::MOVE_LEFT,
@@ -134,6 +140,10 @@ static MOVE_RULES: &[Rule] = &[
     Rule {
         id: RuleId::DELETE_BACKWARD,
         guard: delete_backward,
+    },
+    Rule {
+        id: RuleId::ENTER,
+        guard: enter,
     },
 ];
 
@@ -173,6 +183,6 @@ mod tests {
     #[test]
     fn unsupported_intent_has_no_rule() {
         let editor = Editor::new(Document::new());
-        assert_eq!(match_rule(&editor, &Intent::InsertNewline), None);
+        assert_eq!(match_rule(&editor, &Intent::Paste("x".to_owned())), None);
     }
 }

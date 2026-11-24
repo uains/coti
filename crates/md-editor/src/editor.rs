@@ -2,8 +2,8 @@
 
 use md_core::{TextOffset, TextRange};
 use md_document::{
-    Affinity, Anchor, DocPos, Document, DocumentSnapshot, Marks, Selection, SelectionKind,
-    SelectionSet,
+    Affinity, Anchor, BlockKind, DocPos, Document, DocumentSnapshot, Marks, Selection,
+    SelectionKind, SelectionSet,
 };
 
 use crate::intent::MoveDirection;
@@ -169,6 +169,11 @@ impl Editor {
             return Ok(rule_id);
         }
 
+        if rule_id == RuleId::ENTER {
+            self.insert_newline()?;
+            return Ok(rule_id);
+        }
+
         if rule_id == RuleId::MOVE_LEFT
             || rule_id == RuleId::MOVE_RIGHT
             || rule_id == RuleId::MOVE_DOC_START
@@ -186,6 +191,94 @@ impl Editor {
         Err(EditorError::InvalidIntent {
             message: format!("rule {rule_id} has no executor"),
         })
+    }
+
+    fn insert_newline(&mut self) -> EditorResult<()> {
+        let Some(selection) = self.selection.primary_selection().copied() else {
+            return Err(EditorError::InvalidIntent {
+                message: "enter requires a selection".to_owned(),
+            });
+        };
+        if !selection.is_collapsed() {
+            return Err(EditorError::InvalidIntent {
+                message: "enter on a non-collapsed selection is not implemented".to_owned(),
+            });
+        }
+
+        let index = self.document.index();
+        let resolved =
+            index.resolve_position(&self.document, selection.head.pos, Affinity::Downstream)?;
+        let block_id = resolved.block_id;
+        let kind =
+            self.document
+                .kind(block_id)
+                .cloned()
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "enter target is stale".to_owned(),
+                })?;
+        let Some(content) = kind.inline_content() else {
+            return Err(EditorError::InvalidIntent {
+                message: "enter only supports inline leaves".to_owned(),
+            });
+        };
+        let (left, right) =
+            content
+                .split_at(resolved.offset)
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "could not split inline content at caret".to_owned(),
+                })?;
+
+        let parent = self.document.parent(block_id);
+        let child_index = match parent {
+            Some(parent_id) => self
+                .document
+                .children(parent_id)
+                .and_then(|children| children.iter().position(|id| *id == block_id))
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "enter target is not linked from its parent".to_owned(),
+                })?,
+            None => self
+                .document
+                .root_children()
+                .iter()
+                .position(|id| *id == block_id)
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "enter target is not linked from the root".to_owned(),
+                })?,
+        };
+
+        let mut transaction = Transaction::new(self.document_revision());
+        transaction.push(Operation::SetInlineContent {
+            block_id,
+            content: left,
+        });
+        transaction.push(Operation::InsertBlock {
+            parent,
+            index: child_index + 1,
+            kind: BlockKind::Paragraph(right),
+        });
+        transaction.apply(self)?;
+
+        let new_id = match parent {
+            Some(parent_id) => self.document.children(parent_id).unwrap()[child_index + 1],
+            None => self.document.root_children()[child_index + 1],
+        };
+        let index = self.document.index();
+        let new_leaf = index
+            .leaf_index(new_id)
+            .ok_or_else(|| EditorError::InvalidIntent {
+                message: "new paragraph is not a leaf".to_owned(),
+            })?;
+        let new_pos = index.leaf_start(new_leaf).map(DocPos::new).ok_or_else(|| {
+            EditorError::InvalidIntent {
+                message: "new paragraph has no document position".to_owned(),
+            }
+        })?;
+
+        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Downstream));
+        self.pending_marks = None;
+        self.state_revision += 1;
+        Ok(())
     }
 
     fn insert_text(&mut self, text: &str) -> EditorResult<()> {
@@ -526,7 +619,7 @@ mod tests {
     fn unsupported_intent_is_rejected() {
         let mut editor = editor_at(0);
         assert!(matches!(
-            editor.dispatch(Intent::InsertNewline),
+            editor.dispatch(Intent::Paste("x".to_owned())),
             Err(crate::EditorError::InvalidIntent { .. })
         ));
     }
@@ -584,6 +677,38 @@ mod tests {
         editor.dispatch(Intent::DeleteBackward).unwrap();
         let block = editor.document().root_children()[1];
         assert_eq!(editor.document().kind(block).unwrap().leaf_len(), Some(3));
+        assert_eq!(head(&editor), DocPos::new(1));
+    }
+
+    #[test]
+    fn enter_splits_paragraph_at_caret() {
+        let mut editor = editor_at(2);
+        let before = editor.document().root_children().len();
+        let rule = editor.dispatch(Intent::InsertNewline).unwrap();
+        assert_eq!(rule, RuleId::ENTER);
+        assert_eq!(editor.document_revision(), 1);
+        assert_eq!(editor.document().root_children().len(), before + 1);
+        assert_eq!(head(&editor), DocPos::new(3));
+    }
+
+    #[test]
+    fn enter_at_paragraph_end_creates_empty_paragraph() {
+        let mut editor = editor_at(5);
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        let children = editor.document().root_children();
+        let inserted = children[2];
+        assert_eq!(
+            editor.document().kind(inserted).unwrap().leaf_len(),
+            Some(0)
+        );
+        assert_eq!(head(&editor), DocPos::new(7));
+    }
+
+    #[test]
+    fn enter_at_empty_paragraph_creates_another_empty_paragraph() {
+        let mut editor = editor_at(0);
+        editor.dispatch(Intent::InsertNewline).unwrap();
+        assert_eq!(editor.document().root_children().len(), 4);
         assert_eq!(head(&editor), DocPos::new(1));
     }
 }

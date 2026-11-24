@@ -958,3 +958,28 @@
 - 5.4：PositionMapping 原语（Text/Inline/Block/Split/Join/Move/Normalizer）。
 - 5.5：Enter/Backspace/DeleteForward/Tab/DeleteRange 规则表，接入 Transaction。
 - 5.6：随机 Intent 属性测试与阶段 5 汇总。
+
+## 2026-11-24 · 阶段 5 / 步骤 5.5（第二批）：Enter 规则
+
+**状态：** 已完成；阶段 5 仍在进行中。
+
+### 变更
+
+- 新增 `RuleId::ENTER` 与 guard。
+- `Editor::dispatch` 支持 `InsertNewline`：
+  - 折叠光标处用 `InlineContent::split_at` 拆分当前块。
+  - 当前块保留左半内容，新 Paragraph 插入同一父容器。
+  - 通过 Transaction 提交并定位到新块起点。
+- 新增 3 个 Enter 测试。
+- `md-editor` 47 个测试。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test -p md-editor`：47 个测试通过。
+
+### 已知限制
+
+- Enter 仅支持折叠 Range 与 Inline 叶；非折叠选区、Heading/List/Quote/Table 专用规则未实现。
+- 跨块 DeleteForward/DeleteRange/Tab 仍待实现。
