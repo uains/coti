@@ -19,6 +19,8 @@ pub struct ResolvedStyle {
     pub code_padding: f32,
     /// Quote indentation.
     pub quote_indent: f32,
+    /// Quote vertical padding.
+    pub quote_padding: f32,
     /// List indentation per level.
     pub list_indent: f32,
     /// Table cell padding.
@@ -43,6 +45,7 @@ impl Default for ResolvedStyle {
             code_font_size: 13.0,
             code_padding: 8.0,
             quote_indent: 16.0,
+            quote_padding: 8.0,
             list_indent: 20.0,
             cell_padding: 6.0,
             image_height: 120.0,

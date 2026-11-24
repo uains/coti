@@ -21,12 +21,39 @@ pub(crate) fn parse(source: &str) -> MarkdownResult<MarkdownDocument> {
         builder.handle(event, range)?;
     }
     builder.finish()?;
+    apply_blank_line_hints(&mut builder.document, &source);
 
     Ok(MarkdownDocument {
         document: builder.document,
         source,
         dirty: false,
     })
+}
+
+fn apply_blank_line_hints(document: &mut Document, source: &str) {
+    let ids = document.root_children().to_vec();
+    for pair in ids.windows(2) {
+        let (left, right) = (pair[0], pair[1]);
+        let (Some(left_range), Some(right_range)) = (
+            document.node(left).and_then(|node| node.source().range()),
+            document.node(right).and_then(|node| node.source().range()),
+        ) else {
+            continue;
+        };
+        if left_range.end > right_range.start || right_range.start > source.len() {
+            continue;
+        }
+        let newlines = source[left_range.end..right_range.start]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count();
+        let extra = newlines.saturating_sub(1);
+        if extra > 0 {
+            let mut hint = document.node(left).unwrap().source().clone();
+            hint.style_mut().blank_lines_after = extra;
+            let _ = document.set_source(left, hint);
+        }
+    }
 }
 
 fn options() -> Options {
@@ -612,23 +639,5 @@ mod tests {
     #[test]
     fn parses_frontmatter_and_html_blocks() {
         assert_roundtrip("---\ntitle: Test\n---\n\n<div>\nraw\n</div>\n\nBody.\n");
-    }
-    #[test]
-    fn debug_list_tree() {
-        let source = "# T\n\n## S\n\n- a\n- b\n";
-        let parsed = parse(source).unwrap();
-        let document = parsed.document();
-        eprintln!("root={:?}", document.root_children());
-        for leaf in document.index().leaf_order() {
-            eprintln!(
-                "leaf {leaf:?} parent={:?} kind={:?} start={:?}",
-                document.parent(*leaf),
-                document.kind(*leaf).map(|k| k.kind_name()),
-                document
-                    .index()
-                    .leaf_start(document.index().leaf_index(*leaf).unwrap())
-            );
-        }
-        eprintln!("len={}", document.index().doc_length());
     }
 }

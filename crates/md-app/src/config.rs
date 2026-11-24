@@ -134,6 +134,7 @@ impl ThemeKind {
             style.heading_scale = [1.8, 1.5, 1.25, 1.15, 1.1, 1.05];
             style.code_padding = 12.0;
             style.quote_indent = 18.0;
+            style.quote_padding = 10.0;
             style.list_indent = 22.0;
             style.cell_padding = 8.0;
             style.image_height = 180.0;

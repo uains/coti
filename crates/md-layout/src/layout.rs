@@ -434,7 +434,7 @@ impl<'a> LayoutEngine<'a> {
         let mut y = 0.0;
         for id in document.root_children() {
             let block = self.layout_block(document, *id, Point::new(x, y), width, env);
-            y = block.rect.bottom() + env.style.block_gap;
+            y = block.rect.bottom() + env.style.block_gap + blank_line_gap(document, *id, env);
             blocks.push(block);
         }
         let height = blocks.last().map_or(0.0, |block| block.rect.bottom());
@@ -544,6 +544,7 @@ impl<'a> LayoutEngine<'a> {
                 width,
                 env,
                 env.style.quote_indent,
+                env.style.quote_padding,
             ),
             BlockKind::FootnoteDefinition { .. } => self.layout_container(
                 document,
@@ -553,6 +554,7 @@ impl<'a> LayoutEngine<'a> {
                 width,
                 env,
                 env.style.quote_indent,
+                env.style.quote_padding,
             ),
             BlockKind::List { ordered, .. } => {
                 self.layout_list(document, id, *ordered, origin, width, env)
@@ -565,6 +567,7 @@ impl<'a> LayoutEngine<'a> {
                 width,
                 env,
                 env.style.list_indent,
+                0.0,
             ),
             BlockKind::Table { aligns, .. } => {
                 self.layout_table(document, id, aligns.len(), origin, width, env)
@@ -696,10 +699,11 @@ impl<'a> LayoutEngine<'a> {
         width: f32,
         env: LayoutEnv,
         indent: f32,
+        vertical_padding: f32,
     ) -> BlockLayout {
         let children = document.children(id).unwrap_or(&[]);
         let mut layouts = Vec::new();
-        let mut y = origin.y;
+        let mut y = origin.y + vertical_padding;
         let inner_width = (width - indent).max(1.0);
         for child in children {
             let layout = self.layout_block(
@@ -709,17 +713,22 @@ impl<'a> LayoutEngine<'a> {
                 inner_width,
                 env,
             );
-            y = layout.rect.bottom() + env.style.block_gap;
+            y = layout.rect.bottom() + env.style.block_gap + blank_line_gap(document, *child, env);
             layouts.push(layout);
         }
-        let height = layouts
-            .last()
-            .map_or(0.0, |layout| layout.rect.bottom() - origin.y);
+        let height = layouts.last().map_or(0.0, |layout| {
+            layout.rect.bottom() - origin.y + vertical_padding
+        });
         BlockLayout {
             id,
             kind,
             rect: Rect::new(origin.x, origin.y, width.max(0.0), height),
-            content_rect: Rect::new(origin.x + indent, origin.y, inner_width, height),
+            content_rect: Rect::new(
+                origin.x + indent,
+                origin.y + vertical_padding,
+                inner_width,
+                height,
+            ),
             lines: Vec::new(),
             children: layouts,
         }
@@ -746,7 +755,7 @@ impl<'a> LayoutEngine<'a> {
                 inner_width,
                 env,
             );
-            y = layout.rect.bottom() + env.style.block_gap;
+            y = layout.rect.bottom() + env.style.block_gap + blank_line_gap(document, *item, env);
             children.push(layout);
         }
         let height = children
@@ -855,6 +864,13 @@ fn empty_layout(id: BlockId, origin: Point, width: f32, style: ResolvedStyle) ->
         lines: Vec::new(),
         children: Vec::new(),
     }
+}
+
+fn blank_line_gap(document: &Document, id: BlockId, env: LayoutEnv) -> f32 {
+    document
+        .node(id)
+        .map_or(0, |node| node.source().style().blank_lines_after.min(8)) as f32
+        * env.style.line_height
 }
 
 /// Returns the default measurement style for body text.
@@ -1031,6 +1047,24 @@ mod tests {
         let rects = tree.selection_rects(&selection);
         assert!(!rects.is_empty());
         assert!(rects.iter().all(|rect| rect.width() > 0.0));
+    }
+
+    #[test]
+    fn extra_source_blank_lines_add_vertical_gap() {
+        let mut document = Document::new();
+        let first = document.root_children()[0];
+        document
+            .set_inline_content(first, InlineContent::from_text("a"))
+            .unwrap();
+        let second = document.append_block(None, paragraph("b")).unwrap();
+        let mut hint = document.node(first).unwrap().source().clone();
+        hint.style_mut().blank_lines_after = 1;
+        document.set_source(first, hint).unwrap();
+        let tree = LayoutTree::full(&document, env(300.0));
+        let first_layout = tree.block_outer(first).unwrap();
+        let second_layout = tree.block_outer(second).unwrap();
+        let gap = second_layout.rect.top() - first_layout.rect.bottom();
+        assert!(gap > env(300.0).style.block_gap + env(300.0).style.line_height * 0.5);
     }
 
     #[test]

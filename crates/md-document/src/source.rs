@@ -55,6 +55,8 @@ pub struct StyleHints {
     pub list_style: Option<ListStyleHint>,
     /// Hard break source style.
     pub hard_break: Option<HardBreakStyle>,
+    /// Extra blank lines after this block in the source.
+    pub blank_lines_after: usize,
 }
 
 /// Source metadata for a block node.

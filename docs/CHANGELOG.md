@@ -1569,3 +1569,12 @@
 - 同列表跨项范围删除改为合并：保留起始项前缀 + 结束项后缀，删除中间与结束列表项。
 - 更新跨列表范围删除测试为 `- af` 合并结果。
 - 323 个测试通过。
+
+## 2026-11-24 · Quote 上下留白与空行显示
+
+- Quote/Footnote 布局增加 vertical padding：默认 8px，飞书主题 10px。
+- 解析时按相邻根块 source range 计算额外空行，写入 `StyleHints::blank_lines_after`（最多 8）。
+- 布局按空行数增加 `line_height` 间距，打开文档时连续空行不再消失。
+- 保持 canonical serializer 稳定，fixture 全部通过。
+- 新增空行间距布局测试。
+- 323 个测试通过。
