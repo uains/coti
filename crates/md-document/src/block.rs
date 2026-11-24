@@ -1,6 +1,6 @@
 //! Block nodes and the container/leaf rules between them.
 
-use md_core::TextBuf;
+use md_core::{TextBuf, TextOffset};
 
 use crate::{BlockId, DocumentError, DocumentResult, ImageRef, InlineContent};
 
@@ -237,6 +237,46 @@ impl BlockKind {
             Self::Paragraph(content) | Self::TableCell { content } => Some(content),
             Self::Heading { content, .. } => Some(content),
             _ => None,
+        }
+    }
+
+    /// Returns the leaf content length in `DocPos` units.
+    ///
+    /// Text-bearing leaves use UTF-8 byte length; atomic leaves occupy one
+    /// unit; containers return `None`.
+    #[must_use]
+    pub fn leaf_len(&self) -> Option<usize> {
+        match self {
+            Self::Paragraph(content) | Self::TableCell { content } => Some(content.len()),
+            Self::Heading { content, .. } => Some(content.len()),
+            Self::CodeBlock { text, .. }
+            | Self::HtmlBlock(text)
+            | Self::MathBlock(text)
+            | Self::FrontMatter(text) => Some(text.len_bytes()),
+            Self::ThematicBreak | Self::ImageBlock { .. } => Some(1),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` when `offset` is a legal local offset for this leaf.
+    ///
+    /// Inline leaves require UTF-8/atom boundaries; raw leaves require UTF-8
+    /// character boundaries; atomic leaves accept only 0 or 1.
+    #[must_use]
+    pub fn is_valid_leaf_offset(&self, offset: usize) -> bool {
+        match self {
+            Self::Paragraph(content) | Self::TableCell { content } => {
+                content.is_valid_offset(offset)
+            }
+            Self::Heading { content, .. } => content.is_valid_offset(offset),
+            Self::CodeBlock { text, .. }
+            | Self::HtmlBlock(text)
+            | Self::MathBlock(text)
+            | Self::FrontMatter(text) => {
+                offset <= text.len_bytes() && text.is_char_boundary(TextOffset::new(offset))
+            }
+            Self::ThematicBreak | Self::ImageBlock { .. } => offset <= 1,
+            _ => false,
         }
     }
 
@@ -590,5 +630,51 @@ mod tests {
 
         let mut paragraph = paragraph("x");
         assert!(paragraph.children_mut().is_none());
+    }
+
+    #[test]
+    fn leaf_lengths_cover_inline_raw_and_atomic_blocks() {
+        assert_eq!(paragraph("你好").leaf_len(), Some(6));
+        assert_eq!(
+            BlockKind::Heading {
+                level: 1,
+                content: InlineContent::from_text("title")
+            }
+            .leaf_len(),
+            Some(5)
+        );
+        assert_eq!(
+            BlockKind::CodeBlock {
+                lang: None,
+                text: TextBuf::from("fn main() {}"),
+                fence: FenceStyle::BACKTICK
+            }
+            .leaf_len(),
+            Some(12)
+        );
+        assert_eq!(BlockKind::ThematicBreak.leaf_len(), Some(1));
+        assert_eq!(BlockKind::Quote(vec![BlockId::new(1, 1)]).leaf_len(), None);
+    }
+
+    #[test]
+    fn leaf_offsets_respect_boundaries() {
+        let paragraph = paragraph("你");
+        assert!(paragraph.is_valid_leaf_offset(0));
+        assert!(paragraph.is_valid_leaf_offset(3));
+        assert!(!paragraph.is_valid_leaf_offset(1));
+        assert!(!paragraph.is_valid_leaf_offset(4));
+
+        let code = BlockKind::CodeBlock {
+            lang: None,
+            text: TextBuf::from("你"),
+            fence: FenceStyle::BACKTICK,
+        };
+        assert!(code.is_valid_leaf_offset(3));
+        assert!(!code.is_valid_leaf_offset(1));
+
+        assert!(BlockKind::ThematicBreak.is_valid_leaf_offset(0));
+        assert!(BlockKind::ThematicBreak.is_valid_leaf_offset(1));
+        assert!(!BlockKind::ThematicBreak.is_valid_leaf_offset(2));
+        assert!(!BlockKind::Quote(vec![BlockId::new(1, 1)]).is_valid_leaf_offset(0));
     }
 }

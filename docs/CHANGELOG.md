@@ -524,3 +524,44 @@
 ### 下一步
 
 - 阶段 2 汇总验收，更新 `IMPLEMENTATION.md`，等待确认后进入阶段 3（DocumentIndex、DocPos、Selection）。
+
+## 2026-11-24 · 阶段 3 / 步骤 3.1：DocumentIndex 与 Fenwick 前缀和
+
+**状态：** 已完成。
+
+### 变更
+
+- `BlockKind` 新增 `leaf_len` 与 `is_valid_leaf_offset`：
+  - Inline 叶使用 `InlineContent.len`。
+  - Raw 叶使用 UTF-8 字节长度。
+  - ThematicBreak / ImageBlock 占 1 个 `DocPos` 单位。
+- `InlineContent` 新增 `is_valid_offset`：Text 必须落在 UTF-8 边界，Atom 只允许 start/end。
+- 新增 `DocumentIndex`：
+  - `leaf_order`、`leaf_lengths`、`block_locations`、`parent_index`。
+  - Fenwick Tree 维护 `leaf_len + 1` 的前缀和，用于 Separator 感知的 `DocPos` 查找。
+  - `leaf_at`、`leaf_start`、`leaf_len`、`block_location`、`parent`、`leaf_index`。
+  - `rebuild` 与 `validate`。
+- `Document` 增加 `index` 字段：
+  - `new` 时构建。
+  - `insert_block` / `remove_block` / `move_block` 后重建。
+  - `snapshot` / `restore` 包含索引。
+  - `validate` 增加索引一致性检查。
+- 新增 9 个测试：索引空文档、Separator 起点、容器位置、结构变更重建、陈旧索引检测、Fenwick lower_bound、叶长度与 offset 边界。
+
+### 验证
+
+- `cargo fmt --all -- --check`：通过。
+- `cargo clippy --workspace --all-targets -- -D warnings`：通过。
+- `cargo test --workspace`：112 个测试通过（`md-document` 56 个单元测试 + 3 个属性测试）。
+- `Document::validate` 在测试中同时覆盖树结构与索引一致性。
+
+### 设计说明
+
+- Fenwick 每个 cell 存 `leaf_len + 1`：前缀和直接包含叶子之间唯一的 Block Separator；总长度再减 1，避免尾部多余 Separator。
+- 第一版按设计文档采用“结构修改后重建”，不做增量维护；先保证正确性，后续用性能数据决定是否增量更新。
+- 索引是派生缓存；`DocumentIndex::validate` 通过与 `rebuild` 结果逐字段比较来发现陈旧或损坏。
+- 非法/暂时不完整的文档仍允许重建部分索引，`Document::validate` 会以树结构检查为准。
+
+### 下一步
+
+- 3.2：`DocPos`、`Affinity`、`Position`、`BlockGapPosition`、Separator 两端解析与双向转换。

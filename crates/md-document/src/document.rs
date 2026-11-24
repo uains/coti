@@ -3,7 +3,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    BlockId, BlockKind, BlockNode, DocumentError, DocumentResult, InlineContent, NodeArena,
+    BlockId, BlockKind, BlockNode, DocumentError, DocumentIndex, DocumentResult, InlineContent,
+    NodeArena,
 };
 
 /// A document tree backed by a generation-checked arena.
@@ -15,6 +16,7 @@ use crate::{
 pub struct Document {
     root: Vec<BlockId>,
     arena: NodeArena,
+    index: DocumentIndex,
 }
 
 impl Document {
@@ -23,10 +25,24 @@ impl Document {
     pub fn new() -> Self {
         let mut arena = NodeArena::new();
         let paragraph = arena.alloc(BlockKind::Paragraph(InlineContent::new()), None);
-        Self {
+        let mut document = Self {
             root: vec![paragraph],
             arena,
-        }
+            index: DocumentIndex::default(),
+        };
+        document.rebuild_index();
+        document
+    }
+
+    /// Returns the derived document index.
+    #[must_use]
+    pub fn index(&self) -> &DocumentIndex {
+        &self.index
+    }
+
+    /// Rebuilds the derived index from the current tree.
+    pub fn rebuild_index(&mut self) {
+        self.index = DocumentIndex::rebuild(self);
     }
 
     /// Returns root-level block ids.
@@ -127,6 +143,7 @@ impl Document {
 
         let id = self.arena.alloc(kind, parent);
         self.insert_child_at(parent, index, id)?;
+        self.rebuild_index();
         Ok(id)
     }
 
@@ -179,6 +196,7 @@ impl Document {
         }
 
         self.ensure_root_paragraph();
+        self.rebuild_index();
         Ok(removed)
     }
 
@@ -261,6 +279,7 @@ impl Document {
         if let Some(node) = self.arena.get_mut(id) {
             node.set_parent(new_parent);
         }
+        self.rebuild_index();
 
         Ok(())
     }
@@ -271,6 +290,7 @@ impl Document {
         DocumentSnapshot {
             root: self.root.clone(),
             arena: self.arena.clone(),
+            index: self.index.clone(),
         }
     }
 
@@ -278,6 +298,7 @@ impl Document {
     pub fn restore(&mut self, snapshot: DocumentSnapshot) {
         self.root = snapshot.root;
         self.arena = snapshot.arena;
+        self.index = snapshot.index;
     }
 
     /// Returns `true` when `ancestor` contains `node`.
@@ -346,6 +367,7 @@ impl Document {
             });
         }
 
+        self.index.validate(self)?;
         Ok(())
     }
 
@@ -533,6 +555,7 @@ impl Default for Document {
 pub struct DocumentSnapshot {
     root: Vec<BlockId>,
     arena: NodeArena,
+    index: DocumentIndex,
 }
 
 fn stale(id: BlockId) -> DocumentError {

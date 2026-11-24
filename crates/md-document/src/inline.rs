@@ -298,6 +298,31 @@ impl InlineContent {
         self.runs.is_empty()
     }
 
+    /// Returns `true` when `offset` is a legal local inline boundary.
+    ///
+    /// Text runs require a UTF-8 character boundary; atom runs only accept
+    /// their start or end offset.
+    #[must_use]
+    pub fn is_valid_offset(&self, offset: usize) -> bool {
+        if offset > self.len {
+            return false;
+        }
+
+        let mut remaining = offset;
+        for run in &self.runs {
+            let run_len = run.len();
+            if remaining <= run_len {
+                return match run {
+                    Run::Text { text, .. } => text.is_char_boundary(TextOffset::new(remaining)),
+                    Run::Atom { .. } => remaining == 0 || remaining == 1,
+                };
+            }
+            remaining -= run_len;
+        }
+
+        remaining == 0
+    }
+
     /// Returns the run slice.
     #[must_use]
     pub fn runs(&self) -> &[Run] {
@@ -707,5 +732,19 @@ mod tests {
         let report = content.normalize_with_report();
         assert_eq!(report, InlineNormalizeChange::default());
         assert!(report.is_empty());
+    }
+
+    #[test]
+    fn valid_offsets_respect_text_and_atom_boundaries() {
+        let mut content = InlineContent::from_text("你");
+        content.push_atom(AtomKind::HardBreak, Marks::plain());
+        content.push_text("a", Marks::plain());
+
+        assert!(content.is_valid_offset(0));
+        assert!(content.is_valid_offset(3));
+        assert!(!content.is_valid_offset(1));
+        assert!(content.is_valid_offset(4));
+        assert!(content.is_valid_offset(5));
+        assert!(!content.is_valid_offset(6));
     }
 }

@@ -9,6 +9,7 @@ mod block;
 mod document;
 mod error;
 mod id;
+mod index;
 mod inline;
 
 pub use arena::NodeArena;
@@ -16,6 +17,7 @@ pub use block::{Align, BlockKind, BlockNode, FenceStyle};
 pub use document::{Document, DocumentSnapshot};
 pub use error::{DocumentError, DocumentResult, PositionError, PositionResult};
 pub use id::BlockId;
+pub use index::{BlockLocation, DocumentIndex, LeafHit};
 pub use inline::{
     AtomKind, ImageRef, InlineContent, InlineNormalizeChange, LinkRef, MarkFlags, Marks, Run,
 };
