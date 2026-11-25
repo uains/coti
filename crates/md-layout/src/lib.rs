@@ -14,7 +14,8 @@ mod style;
 pub use error::{LayoutError, LayoutResult};
 pub use inline::{Cluster, InlineLayout, Line, layout_inline};
 pub use layout::{
-    BlockLayout, LayoutEngine, LayoutKind, LayoutTree, body_measure_style, layout_with_measurer,
+    BlockLayout, LayoutCache, LayoutEngine, LayoutKind, LayoutTree, body_measure_style,
+    layout_with_measurer, layout_with_measurer_cached,
 };
 pub use measure::{FakeMeasurer, LineMetrics, TextMeasurer, is_wide};
 pub use style::{LayoutEnv, MeasureStyle, PaintStyle, ResolvedStyle};

@@ -76,6 +76,20 @@ pub enum Operation {
         /// Target block.
         id: BlockId,
     },
+    /// Wraps a block in a quote.
+    WrapInQuote {
+        /// Block to wrap.
+        id: BlockId,
+    },
+    /// Wraps a block in a new list item.
+    WrapInList {
+        /// Block to wrap.
+        id: BlockId,
+        /// Whether the list is ordered.
+        ordered: bool,
+        /// First ordered number.
+        start: u32,
+    },
     /// Moves a block while preserving its id.
     MoveBlock {
         /// Target block.
@@ -403,6 +417,67 @@ impl Operation {
                         kind,
                     },
                     affected: vec![*id],
+                })
+            }
+            Self::WrapInQuote { id } => {
+                let parent = document.parent(*id);
+                let index = if let Some(parent) = parent {
+                    document
+                        .children(parent)
+                        .and_then(|children| children.iter().position(|child| *child == *id))
+                } else {
+                    document
+                        .root_children()
+                        .iter()
+                        .position(|child| *child == *id)
+                }
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "wrapped block is not linked from its parent".to_owned(),
+                })?;
+                let quote = document.insert_block(parent, index, BlockKind::Quote(Vec::new()))?;
+                document.move_block(*id, Some(quote), 0)?;
+                Ok(AppliedOperation {
+                    inverse: Self::RemoveBlock { id: quote },
+                    affected: vec![quote, *id],
+                })
+            }
+            Self::WrapInList { id, ordered, start } => {
+                let parent = document.parent(*id);
+                let index = if let Some(parent) = parent {
+                    document
+                        .children(parent)
+                        .and_then(|children| children.iter().position(|child| *child == *id))
+                } else {
+                    document
+                        .root_children()
+                        .iter()
+                        .position(|child| *child == *id)
+                }
+                .ok_or_else(|| EditorError::InvalidIntent {
+                    message: "wrapped block is not linked from its parent".to_owned(),
+                })?;
+                let list = document.insert_block(
+                    parent,
+                    index,
+                    BlockKind::List {
+                        ordered: *ordered,
+                        start: *start,
+                        tight: true,
+                        items: Vec::new(),
+                    },
+                )?;
+                let item = document.insert_block(
+                    Some(list),
+                    0,
+                    BlockKind::ListItem {
+                        task: None,
+                        children: Vec::new(),
+                    },
+                )?;
+                document.move_block(*id, Some(item), 0)?;
+                Ok(AppliedOperation {
+                    inverse: Self::RemoveBlock { id: list },
+                    affected: vec![list, item, *id],
                 })
             }
             Self::MoveBlock {

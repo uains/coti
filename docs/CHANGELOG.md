@@ -1594,3 +1594,13 @@
 - 空段落 caret 回退到块矩形，确保新空行有可见 caret。
 - 新增 `enter_at_block_end_places_caret_in_new_empty_block` 回归测试。
 - 325 个测试通过。
+
+## 2026-11-25 · 布局缓存虚拟化与自动输入规则
+
+- `LayoutCache` 从 `LayoutEngine` 抽出，可由 AppWindow 跨 relayout 持有；未变化 block 的 inline line 布局继续复用，不再重新 shaping。
+- `layout_with_measurer_cached` 接收并返回缓存；`relayout_with` 已接入。
+- 绘制仍只生成视口 ± 一屏的 PaintPlan。
+- 自动输入规则扩展：`# `～`###### `、`> `、`- `/`* `/`+ `、`1. `、`---`/`___`/`***`。
+- 新增 `WrapInQuote`、`WrapInList` Operation，保留原 BlockId 并移入容器。
+- 新增标题/引用/列表/分隔线输入规则测试。
+- 328 个测试通过。

@@ -1532,11 +1532,11 @@ impl Editor {
         self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Upstream));
         self.pending_marks = None;
         self.state_revision += 1;
-        self.try_heading_input_rule()?;
+        self.try_input_rule()?;
         Ok(())
     }
 
-    fn try_heading_input_rule(&mut self) -> EditorResult<()> {
+    fn try_input_rule(&mut self) -> EditorResult<()> {
         let Some(selection) = self.selection.primary_selection().copied() else {
             return Ok(());
         };
@@ -1551,31 +1551,112 @@ impl Editor {
             return Ok(());
         };
         let text = content.plain_text();
-        let level = text
+        if text.is_empty() || resolved.offset != text.len() {
+            return Ok(());
+        }
+
+        let heading_len = text
             .chars()
             .take_while(|character| *character == '#')
             .count();
-        if !(1..=6).contains(&level) || text.as_bytes().get(level) != Some(&b' ') {
+        if (1..=6).contains(&heading_len)
+            && text.as_bytes().get(heading_len) == Some(&b' ')
+            && text.len() == heading_len + 1
+        {
+            let prefix = heading_len + 1;
+            let Some((_, heading_content)) = content.split_at(prefix) else {
+                return Ok(());
+            };
+            let mut transaction = Transaction::new(self.document_revision());
+            transaction.push(Operation::SetBlockKind {
+                id: resolved.block_id,
+                kind: BlockKind::Heading {
+                    level: heading_len as u8,
+                    content: heading_content,
+                },
+            });
+            self.commit(transaction)?;
+            self.selection = SelectionSet::new(Selection::collapsed(
+                DocPos::new(selection.head.pos.get() - prefix),
+                Affinity::Upstream,
+            ));
             return Ok(());
         }
-        let prefix = level + 1;
-        if resolved.offset < prefix {
-            return Ok(());
-        }
-        let Some((_, heading_content)) = content.split_at(prefix) else {
-            return Ok(());
+
+        let (prefix, list) = if text == "> " {
+            (2, None)
+        } else if text == "- " || text == "* " || text == "+ " {
+            (2, Some((false, 1)))
+        } else if let Some(dot) = text.find(". ")
+            && dot > 0
+            && text[..dot].bytes().all(|byte| byte.is_ascii_digit())
+            && text.len() == dot + 2
+        {
+            (
+                dot + 2,
+                Some((true, text[..dot].parse::<u32>().unwrap_or(1))),
+            )
+        } else {
+            (0, None)
         };
-        let mut transaction = Transaction::new(self.document_revision());
-        transaction.push(Operation::SetBlockKind {
-            id: resolved.block_id,
-            kind: BlockKind::Heading {
-                level: level as u8,
-                content: heading_content,
-            },
-        });
-        self.commit(transaction)?;
-        let new_pos = DocPos::new(selection.head.pos.get() - prefix);
-        self.selection = SelectionSet::new(Selection::collapsed(new_pos, Affinity::Upstream));
+        if prefix > 0 {
+            let Some((_, stripped)) = content.split_at(prefix) else {
+                return Ok(());
+            };
+            let mut transaction = Transaction::new(self.document_revision());
+            transaction.push(Operation::SetInlineContent {
+                block_id: resolved.block_id,
+                content: stripped,
+            });
+            if let Some((ordered, start)) = list {
+                transaction.push(Operation::WrapInList {
+                    id: resolved.block_id,
+                    ordered,
+                    start,
+                });
+            } else {
+                transaction.push(Operation::WrapInQuote {
+                    id: resolved.block_id,
+                });
+            }
+            self.commit(transaction)?;
+            let index = self.document.index();
+            let leaf =
+                index
+                    .leaf_index(resolved.block_id)
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "input rule target is not a leaf".to_owned(),
+                    })?;
+            let pos = index.leaf_start(leaf).map(DocPos::new).ok_or_else(|| {
+                EditorError::InvalidIntent {
+                    message: "input rule target has no position".to_owned(),
+                }
+            })?;
+            self.selection = SelectionSet::new(Selection::collapsed(pos, Affinity::Downstream));
+            return Ok(());
+        }
+
+        if matches!(text.as_str(), "---" | "___" | "***") {
+            let mut transaction = Transaction::new(self.document_revision());
+            transaction.push(Operation::SetBlockKind {
+                id: resolved.block_id,
+                kind: BlockKind::ThematicBreak,
+            });
+            self.commit(transaction)?;
+            let index = self.document.index();
+            let leaf =
+                index
+                    .leaf_index(resolved.block_id)
+                    .ok_or_else(|| EditorError::InvalidIntent {
+                        message: "thematic break is not a leaf".to_owned(),
+                    })?;
+            let pos = index.leaf_start(leaf).map(DocPos::new).ok_or_else(|| {
+                EditorError::InvalidIntent {
+                    message: "thematic break has no position".to_owned(),
+                }
+            })?;
+            self.selection = SelectionSet::new(Selection::collapsed(pos, Affinity::Downstream));
+        }
         Ok(())
     }
 
@@ -2317,6 +2398,47 @@ mod tests {
         assert_eq!(editor.document_revision(), 1);
         assert_eq!(editor.document().root_children().len(), before + 1);
         assert_eq!(head(&editor), DocPos::new(3));
+    }
+
+    #[test]
+    fn input_rule_wraps_paragraph_in_list() {
+        let mut editor = Editor::new(Document::new());
+        editor
+            .dispatch(Intent::InsertText("- ".to_owned()))
+            .unwrap();
+        let root = editor.document().root_children()[0];
+        assert!(matches!(
+            editor.document().kind(root),
+            Some(BlockKind::List { .. })
+        ));
+        assert_eq!(head(&editor), DocPos::new(0));
+    }
+
+    #[test]
+    fn input_rule_wraps_paragraph_in_quote() {
+        let mut editor = Editor::new(Document::new());
+        editor
+            .dispatch(Intent::InsertText("> ".to_owned()))
+            .unwrap();
+        let root = editor.document().root_children()[0];
+        assert!(matches!(
+            editor.document().kind(root),
+            Some(BlockKind::Quote(_))
+        ));
+        assert_eq!(head(&editor), DocPos::new(0));
+    }
+
+    #[test]
+    fn input_rule_creates_thematic_break() {
+        let mut editor = Editor::new(Document::new());
+        editor
+            .dispatch(Intent::InsertText("---".to_owned()))
+            .unwrap();
+        let root = editor.document().root_children()[0];
+        assert!(matches!(
+            editor.document().kind(root),
+            Some(BlockKind::ThematicBreak)
+        ));
     }
 
     #[test]

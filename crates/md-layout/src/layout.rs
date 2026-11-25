@@ -397,8 +397,14 @@ struct CachedInline {
 
 /// Incremental layout engine with a leaf-line cache.
 pub struct LayoutEngine<'a> {
-    cache: HashMap<BlockId, CachedInline>,
+    cache: LayoutCache,
     measurer: Box<dyn TextMeasurer + 'a>,
+}
+
+/// Reusable inline layout cache for windowed document layout.
+#[derive(Clone, Debug, Default)]
+pub struct LayoutCache {
+    entries: HashMap<BlockId, CachedInline>,
 }
 
 impl Default for LayoutEngine<'static> {
@@ -412,7 +418,7 @@ impl<'a> LayoutEngine<'a> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            cache: HashMap::new(),
+            cache: LayoutCache::default(),
             measurer: Box::new(FakeMeasurer::new()),
         }
     }
@@ -421,25 +427,39 @@ impl<'a> LayoutEngine<'a> {
     #[must_use]
     pub fn with_measurer(measurer: Box<dyn TextMeasurer + 'a>) -> Self {
         Self {
-            cache: HashMap::new(),
+            cache: LayoutCache::default(),
             measurer,
         }
     }
 
+    /// Returns the reusable inline layout cache.
+    #[must_use]
+    pub fn take_cache(&mut self) -> LayoutCache {
+        std::mem::take(&mut self.cache)
+    }
+
+    /// Restores a previously extracted cache.
+    pub fn with_cache(mut self, cache: LayoutCache) -> Self {
+        self.cache = cache;
+        self
+    }
+
     /// Invalidates one block.
     pub fn invalidate(&mut self, id: BlockId) {
-        self.cache.remove(&id);
+        self.cache.entries.remove(&id);
     }
 
     /// Invalidates all cached blocks.
     pub fn invalidate_all(&mut self) {
-        self.cache.clear();
+        self.cache.entries.clear();
     }
 
     /// Lays out a document, reusing unchanged leaf line layouts.
     #[must_use]
     pub fn sync(&mut self, document: &Document, env: LayoutEnv) -> LayoutTree {
-        self.cache.retain(|id, _| document.node(*id).is_some());
+        self.cache
+            .entries
+            .retain(|id, _| document.node(*id).is_some());
         let viewport_width = env.width();
         let padding = env.style.content_padding.max(0.0);
         let width = (viewport_width - padding * 2.0)
@@ -605,7 +625,7 @@ impl<'a> LayoutEngine<'a> {
         width: f32,
         style: MeasureStyle,
     ) -> BlockLayout {
-        let layout = if let Some(cached) = self.cache.get(&id)
+        let layout = if let Some(cached) = self.cache.entries.get(&id)
             && cached.kind == kind
             && cached.width == width
             && cached.style == style
@@ -622,7 +642,7 @@ impl<'a> LayoutEngine<'a> {
             }
         } else {
             let layout = layout_inline(content, &style, self.measurer.as_ref(), width, Point::ZERO);
-            self.cache.insert(
+            self.cache.entries.insert(
                 id,
                 CachedInline {
                     kind,
@@ -902,6 +922,17 @@ pub fn layout_with_measurer(
     env: LayoutEnv,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
+    layout_with_measurer_cached(document, env, measurer, LayoutCache::default()).0
+}
+
+/// Lays out a document while reusing a persistent inline layout cache.
+#[must_use]
+pub fn layout_with_measurer_cached(
+    document: &Document,
+    env: LayoutEnv,
+    measurer: &mut dyn TextMeasurer,
+    cache: LayoutCache,
+) -> (LayoutTree, LayoutCache) {
     struct Borrowed<'a>(&'a mut dyn TextMeasurer);
     impl TextMeasurer for Borrowed<'_> {
         fn advance(&self, text: &str, style: &MeasureStyle) -> f32 {
@@ -917,8 +948,9 @@ pub fn layout_with_measurer(
         }
     }
 
-    let mut engine = LayoutEngine::with_measurer(Box::new(Borrowed(measurer)));
-    engine.sync(document, env)
+    let mut engine = LayoutEngine::with_measurer(Box::new(Borrowed(measurer))).with_cache(cache);
+    let tree = engine.sync(document, env);
+    (tree, engine.take_cache())
 }
 
 #[cfg(test)]

@@ -271,6 +271,7 @@ pub struct AppWindow {
     pub viewport: Size,
     layout_revision: u64,
     layout_width: f32,
+    layout_cache: md_layout::LayoutCache,
 }
 
 impl AppWindow {
@@ -284,6 +285,7 @@ impl AppWindow {
             viewport,
             layout_revision: u64::MAX,
             layout_width: viewport.width,
+            layout_cache: md_layout::LayoutCache::default(),
         }
     }
 
@@ -311,11 +313,15 @@ impl AppWindow {
             self.state.config().font_size,
             self.state.config().line_height,
         );
-        self.view.layout = md_layout::layout_with_measurer(
+        let cache = std::mem::take(&mut self.layout_cache);
+        let (layout, cache) = md_layout::layout_with_measurer_cached(
             self.state.editor().document(),
             md_layout::LayoutEnv::new(self.viewport, style),
             measurer,
+            cache,
         );
+        self.layout_cache = cache;
+        self.view.layout = layout;
         self.view.scroll.clamp(self.view.layout.total_height());
         self.layout_revision = revision;
         self.layout_width = self.viewport.width;
